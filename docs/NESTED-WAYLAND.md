@@ -18,6 +18,24 @@ rebuilt after the patch changes. Distribution-provided wlroots packages are not
 modified. When building against such a package, nested text injection still
 needs this fix in that dependency.
 
+Before reusing or recording a private build, both installers check that its
+wlroots pkg-config metadata and shared library are present under the private
+prefix. A system pkg-config fallback is not accepted as that private build.
+The packaged-library path prints a warning that this installer has not applied
+or verified the dependency fix. Package selection is unchanged: an installed
+distribution wlroots package takes priority over an existing private copy.
+
+Run the offline installer regression checks from a complete source checkout:
+
+```sh
+python3 scripts/check-installers.py
+```
+
+These checks use synthetic source archives and stub Meson/pkg-config commands
+to test installer selection, caching and failure handling without installing
+packages. They also verify the shipped checksum manifest and private-library
+validation. They do not establish full Arch or Ubuntu installation acceptance.
+
 For a private manual build, apply it to a fresh wlroots 0.18.3 source tree before
 Meson setup:
 

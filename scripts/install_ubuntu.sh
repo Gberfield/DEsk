@@ -65,7 +65,7 @@ fi
 # checked against it first: a copy damaged on its way (a stick pulled out
 # too soon) stops here and says which files, not at some line of the build
 # that says nothing of why. install_session.sh checks it before it runs
-# this, and says so (DESK_SUMS_CHECKED). A git checkout has none.
+# this, and says so (DESK_SUMS_CHECKED). Check tracked manifests too.
 if [ -z "${DESK_SUMS_CHECKED:-}" ] && [ -f "$root/SHA256SUMS" ] \
 	&& command -v sha256sum >/dev/null 2>&1; then
 	if ! damaged=$(cd "$root" && sha256sum --quiet -c SHA256SUMS 2>&1); then
@@ -520,6 +520,11 @@ if [ -n "$auto" ]; then
 	as_root apt-mark manual $auto >/dev/null || say "Note: apt-mark could not (above)."
 fi
 
+if [ "$wlroots" = apt ]; then
+	say "Note: distribution wlroots selected; the parent-keymap fix is not applied or verified here."
+	say "      Nested automated text may require a patched dependency (docs/NESTED-WAYLAND.md)."
+fi
+
 # -- 2. wlroots 0.18, when there is none to install -------------------------
 # Built as the builder in build-install-wlroots and installed under $wlr,
 # with its own library folder written into everything built against it
@@ -557,7 +562,7 @@ if [ "$wlroots" = source ]; then
 	todo="$todo
 nested-keymap $(sh "$root/scripts/wlroots-keymap.sh" --fingerprint)"
 	if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$todo" ] \
-		&& PKG_CONFIG_PATH=$pcpath pkg-config --exact-version="$wlrver" wlroots-0.18 2>/dev/null; then
+		&& sh "$root/scripts/wlroots-keymap.sh" --check-installed "$wlr" "$wlrver" 2>/dev/null; then
 		say "  $(printf '%s' "$todo" | tr '\n' ',' | sed 's/,/, /g'): built before, kept"
 	else
 		as_builder mkdir -p "$deps"
@@ -589,7 +594,7 @@ nested-keymap $(sh "$root/scripts/wlroots-keymap.sh" --fingerprint)"
 				|| { cat "$tmp/$what.log"; die "$what $ver did not install into $wlr"; }
 			say "  $what $ver: built and installed in $(( $(date +%s) - start )) s"
 		done < "$tmp/sources"
-		PKG_CONFIG_PATH=$pcpath pkg-config --exact-version="$wlrver" wlroots-0.18 \
+		sh "$root/scripts/wlroots-keymap.sh" --check-installed "$wlr" "$wlrver" \
 			|| die "wlroots $wlrver is not to be found in $wlr after building it"
 		printf '%s\n' "$todo" > "$tmp/built"
 		as_root install -D -m 644 "$tmp/built" "$stamp"

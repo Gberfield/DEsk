@@ -1,9 +1,10 @@
 8f56e4ad837b4931a888cfbef8c6fb7641ca8f37c450501ee6657be2d91a3777  ./.dockerignore
+1798f17beb034e6ec457f7da76fbe7c2158f96eb452fc265ce97963ddd59d997  ./.gitattributes
 f23feed53be20d224688cb6cbd0a1e7ae0f68f9254ab74bf78d420b2825b71e7  ./.gitignore
 9ca2f8afe06176db8b331513b4c67681c6923b3414e194fe6ef66eb8c8fa6e44  ./Dockerfile
 87dd199cc6c7a1fd1fefb42f86d924b11a053ef5444dfd5cbf479dd22d6dbc15  ./LICENSE
 3b0e8a1f9dc9cc3a0f92cea7846730bc3253832217e7ae55eff695b6dc49fb25  ./README.ja.md
-ab4b6ceffd348faba97f3cd7af257190cabdc1ae17d2ceae4951b0cac563f410  ./README.md
+c3ca71a35fd4bbea24feed85e538ec7f2e6a9e8ea952404a049ae6227c1029d3  ./README.md
 5069f815ca7acaf4062128f2660e236292a81cd5f3620eb2a037664d9360222b  ./RELEASE-NOTES.ja.md
 d79fcca40c98944e7442938d8dd1fa75a034527015803a97d680bd3bf6a87cf3  ./RELEASE-NOTES.md
 95ec560c0517006961566f73ef2ae19b8f3dbe8b70b90366f0b908599957e49b  ./applications/meson.build
@@ -12,6 +13,7 @@ eca09805725a6a0662529877f07bf6c66a88d1457099685da043985b1ce8dbdf  ./docs/ARCHITE
 9619191da98466cbd813bb7995057ccee6a08d68103a802b5382804c426bb531  ./docs/CONFIGURATION.md
 8451728b01a2963a21ab43a343adc6349476e848329add3d1c7256d73329b53b  ./docs/MODDING.ja.md
 f13659ce393144c586bddc12270bb46417f99386c9083ccc6993d694b5e599e1  ./docs/MODDING.md
+73d6e2bb7e4f8d114e323b8fdf030bbe6f00e69561d58d1138049fc6d7753904  ./docs/NESTED-WAYLAND.md
 cdaef1ed81f6833bc4e8c3e3925cd1aee84e4ff6249acc020b06058b69198001  ./docs/design.md
 c4efeabc60bc2cac593492b3b7e4c141a6f643819c83c9a5cd741d397a19c1a2  ./docs/screenshots/book-search.jpg
 5cebb4ef413b30a48fd63d511ecdfcdb9d2daebe175fd79f94e288ac50099548  ./docs/screenshots/book.jpg
@@ -46,8 +48,11 @@ c66ceb68f5593ae2fb99a3f849694af74cf9e53173ff734a5038d8d47507cd81  ./include/tray
 a165488357a52831b8e84f362c1422f8603e781d9cc7a59e0c7360a7d3cba35a  ./meson.build
 d71a97f44854ceed9b3c1c68506b083ce22099977388599e1eabaed37002deed  ./meson_options.txt
 950ba49090168acdb352ee484939507b8077400d2ba017b1e2d7bb61b2189aa2  ./packaging/debian/desk-desktop.equivs
+0b0ed2d43aab34cf62462561dee4d841ea2d6f23174ecc09aca30e95a53c7d22  ./patches/wlroots-0.18-parent-keymap.patch
 65b0f82a6cf129bf1a1c31a2428795abd33886c15ddd5f3ad97e5922d7bdc3a7  ./protocols/wlr-output-management-unstable-v1.xml
 7ebd98f3449d246a57829e4b4dd9fbc3ef98e3dd42fa94ea102f14f490eb20de  ./protocols/wlr-output-power-management-unstable-v1.xml
+a4c4aa75e4ff2667ec743b29f56f6fc9ef094e8bf482b6c02006db24c074ac03  ./scripts/check-installers.py
+7d22bef64f1e08c86f9f8fd75bb23575dc5794b598203d3bea8e33cf08f608f7  ./scripts/check-wlroots-keymap.py
 84d400c18f7f7804c3a979de2c72b1bdee26da5067add45d2aba79bda16f1be0  ./scripts/check-words.py
 d45b7f3fb8115abeee25582d8d5ae20c0c48fcc826ca10fc533eec8583a6d5e4  ./scripts/desk-ctl
 741b708c12e7f5a5f58e384dd862925f35e55467671a2c7b95bc9f0d1227ce87  ./scripts/desk-report
@@ -58,13 +63,14 @@ c1c176a9e9bb5638bd09ca515aa59d57b0651c1a772920fcdd69364675605a34  ./scripts/desk
 92bb78331c858b067696bc4771a5b225616a613ee1ae7276e1d6f69406c27226  ./scripts/glsl2c.py
 8bb9498037ce7adaa0a019fa528b45d1e50127d89a6fbd0ff08970b514f09efe  ./scripts/install-desktop.sh
 f497730ae4f3845d5f2d4af8f7752cd6cd93be9f280541649ecac5aa7e3cfcc5  ./scripts/install.sh
-1e8c562e86acd140848d203173bd6aca6dcf8a728ccf3758658a88a6c1cada61  ./scripts/install_arch.sh
+2fa7ba330b681eb912d27cc1186ec622f9029342596e470f072ce5005ed7b43b  ./scripts/install_arch.sh
 50f09c7f54266f6f765d327ef36aa103291ce7483f595f0291d3f374856a9f4b  ./scripts/install_debian.sh
 2585b315141818200299710bf7c8dc381d4d7b26b49547c40bbc751496ae24f2  ./scripts/install_fedora.sh
 88d207cb26e99df2efa67ea71dd3e8f9908bbfa350bf689ef2ff84326f2798dc  ./scripts/install_session.sh
-b67e05be75031e67357256792d9e6cbd6dd653330394ae9c29d2fcf72fc11a7e  ./scripts/install_ubuntu.sh
+8f9d450dac8e26bab2416255f93b2a00eaeeda1035ac12e6ad2524435fcc5f55  ./scripts/install_ubuntu.sh
 b6164325cec6f7b2a2328c01ad0daade3d6a3ed26de3eca51007dd2b86028442  ./scripts/room-key.py
 950590bbb80842a602afe00517244207bb7db4b078dd98b6220239e85b07c556  ./scripts/verify.sh
+cfdff1bddbbbe7472e75d1051ba89144c7a2ca2ac326b206b4aa4cbc241673ec  ./scripts/wlroots-keymap.sh
 efb1e1e656adf893543970a70e1417942f5df28b7f134a60d022e9291ea7ab8d  ./session/autostart/desk-ime.desktop
 a2a9677ca6c100125ed9b772103b000a7e8ee1051f1b6785b84d964d8fb9df00  ./session/autostart/desk-keyring.desktop
 0cdcd53d5d51b74fc5a48b7538013169f09b4208a8e80b06a76ba036c272cdca  ./session/autostart/desk-media.desktop
@@ -108,7 +114,7 @@ c0c1d288860308d83a7fbd718ae11cce3e3ff95d24693ead1d3332926125a327  ./src/session.
 c5062fe9f23c69c728ed2505188f2bd5791a9072d1d013a073346dd79110646e  ./src/sound.c
 2c6a618dae877ea979543d050d2073e40513237d6fcf93fd8cbd3450bbf3fbaa  ./src/tray.c
 de0f5d47c568c8d92a27351f3fd585430e799ef86c031a1f21a63e478c57d9a3  ./src/user.c
-bf061a8cd8fc87f69108aa815037a20514e57a68f51155ee982958ac9d51ab5a  ./src/wm.c
+54fcb536e0f0727fb3917615b45fd9d6cdeddc47ab420a278aca94b06170656f  ./src/wm.c
 95084c4fdadd53f3e2a2df6b92d261bbb0be395b98844c021320a7a54dbf7fce  ./themes/contact-sheet.py
 ccd7f9403ebc18dc92d8e84cbb112ed43b9ed5af04368a40f0429320d0032b0d  ./themes/gtk/DEsk/gtk-3.0/gtk.css
 9b525da1c9c2ea459b8ec1ab5ae67f324ef6ecf64fded2d40ef653d67387596e  ./themes/gtk/DEsk/index.theme
