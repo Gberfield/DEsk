@@ -1,8 +1,79 @@
 **English** | [日本語](RELEASE-NOTES.ja.md)
 
-# DEsk v0.1.3 (BETA)
+# DEsk v0.1.4 (BETA)
 
-## What changed since v0.1.2
+## What changed since v0.1.3
+
+- **Fixed: after the screen turned off, it never came back** on some
+  monitors (GitHub #18). Many HDMI and DisplayPort monitors say they have
+  been unplugged when they go to sleep, and DEsk ended the whole session when
+  its last screen went away: nothing could wake it, and every program in it
+  was closed. DEsk now keeps the session and waits for the screen. A screen
+  that comes back while the desk is dark stays dark until you press a key or
+  move the mouse, so a sleeping monitor is left asleep. If your monitor stays
+  asleep this way, press its power button (turning off its deep-sleep or
+  power-saving setting avoids it). Thanks to JamesStallings on GitHub for the
+  report and the `desk-report` that showed what happened.
+- **Fixed: on a laptop whose firmware screen stayed beside its graphics
+  card, the desk was drawn in 2D on a screen nobody sees.** Some drivers
+  (NVIDIA's, unless `nvidia_drm.fbdev=1` is set) leave the screen the
+  firmware started with (simpledrm) beside the real card, and DEsk took that
+  one as its main screen: drawn on the processor, in 2D Fallback, with the
+  laptop's own panel showing only the wood. DEsk now leaves the firmware's
+  screen out when a graphics card with screens of its own is there, and says
+  so in its log ("screens: ... left out"). If you set `WLR_DRM_DEVICES`
+  yourself, it is left as you set it. Thanks to Darkhawk on Discord for the
+  report and the `desk-report`.
+- **Arabic and more in Shell Settings' "Second layout".** Arabic, Persian,
+  Hebrew, Greek, Ukrainian, Hindi and Thai can now be chosen there (any
+  layout xkb knows could already be written into `shell.conf`). And DEsk's
+  own shortcuts, such as Super+A for ALL APPS and Super+L to lock, now work
+  while a second layout like Arabic or Russian is on; before, they did
+  nothing until you changed back. Thanks to YZ10 on Discord for asking.
+- **GTK 4 programs on paper too.** DEsk's GTK theme now has a GTK 4 part, so
+  GTK 4 programs that follow the theme (pavucontrol, for one) get the same
+  paper, ink and brass as GTK 3 ones in a DEsk session. Programs made with
+  libadwaita (most of GNOME's) do not follow themes; the README has the one
+  line that puts them on paper too, if you want it in every desktop. Thanks
+  to VKOWinHecker201 on GitHub, who made the GTK 4 stylesheet (#17).
+- **Fixed: on a screen put together on the GPU, a sheet's turned-up corner
+  showed the bare desk** instead of the sheet beneath it. It now shows what
+  is underneath, as on the processor. (Known issue since v0.1.)
+- **Fixed: after changing Graphics, the Control Panel and the post box were
+  drawn wrong until you logged in again** (GitHub #12). The Control Panel
+  lost its needles, lamps and labels, and the post box its letters: the
+  traced picture under them was made again on top of them. Thanks to
+  Myttenzzz on GitHub for the report.
+- **Fixed: an unfolded (maximized) browser came back small after a
+  full-screen video.** Chrome, Brave and other Chromium browsers ask to be
+  maximized again when they leave full screen, and DEsk took any such request
+  as "the other way round". It now does what the window asks for. Thanks to
+  what on Discord for the report.
+- **Fixed: on a slower processor, the front door (the lock screen) stood
+  still for a second or more**, sometimes for several, so that typing the
+  password and going in were late. The door is drawn on the processor even
+  with a GPU. Its fine picture is now drawn behind everything else and
+  given up as soon as it is no longer needed, and the moving picture gets
+  coarser at once when the machine cannot keep up. On a machine like
+  2010's, going in after typing the password takes as long as on a fast
+  one.
+- **Fixed: "DEsk" in the bookcase did nothing inside DEsk.** That entry opens
+  DEsk in a window from another desktop; it is now left out inside DEsk.
+- **Fixed: an old X program folded into a blank sheet.** A window whose
+  title is in Latin-1 rather than UTF-8 left its folded sheet without its
+  letter and name; it now gets a "?" for its letter, and its name. Program
+  names that are not proper UTF-8 (a desktop file in another encoding, or a
+  long name cut off inside a letter) are cleaned up as they are read.
+- **`desk-report`** now lists each graphics device with its driver and the
+  screens plugged into it, NVIDIA's `fbdev` setting, and the kernel options
+  that choose them. A laptop whose firmware screen sat beside its NVIDIA
+  card (only the desk's wood showing) is then plain from its first lines.
+- **Docs: where `shell.conf` is.** Your own `~/.config/desk/shell.conf` is
+  written the first time you change a setting in Shell Settings; until then
+  the machine's `/etc/xdg/desk/shell.conf` and the defaults hold (README,
+  docs/CONFIGURATION.md).
+
+## What changed in v0.1.3
 
 - **New: games on the whole screen, with the mouse caught.** `Super+F` puts
   the window in front on the whole screen (and back). A game can now catch
@@ -152,7 +223,7 @@ lights a ray-traced room.
 
 ## Installing
 
-Unpack the release (`DEsk-v0.1.2-BETA.zip` or `.tar.gz`), go into its folder
+Unpack the release (`DEsk-v0.1.4-BETA.zip` or `.tar.gz`), go into its folder
 and run the line for your system:
 
 ```sh
@@ -220,10 +291,10 @@ rendered in all seven languages; the translation tables checked by
 ## Checking your copy
 
 The folder carries `SHA256SUMS`, which the installer checks before it builds.
-The archive comes with `DEsk-v0.1.2-BETA.tar.gz.sha256`:
+The archive comes with `DEsk-v0.1.4-BETA.tar.gz.sha256`:
 
 ```sh
-sha256sum -c DEsk-v0.1.2-BETA.tar.gz.sha256
+sha256sum -c DEsk-v0.1.4-BETA.tar.gz.sha256
 ```
 
 ## License

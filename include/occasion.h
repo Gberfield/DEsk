@@ -11,7 +11,8 @@ struct wl_event_loop;
  *
  * Christmas (the 24th and 25th of December), the New Year (its first three
  * days) and the birthday set in Shell Settings dress the front door for
- * them, and the desk does a little something at login. Where the house is
+ * them, and the desk does a little something at login. Halloween (the 31st
+ * of October) dresses the door too, and that is all it does. Where the house is
  * comes from the time zone -- the city it is named after, in the system's
  * zone1970.tab -- and from that, where the sun is and, if the weather is
  * wanted, what the sky is doing there: asked of open-meteo.com every half
@@ -25,6 +26,7 @@ enum {
 	DESK_OCC_XMAS = 1,
 	DESK_OCC_NEWYEAR = 2,
 	DESK_OCC_BIRTHDAY = 4,
+	DESK_OCC_HALLOWEEN = 8,
 };
 
 struct desk_occasion_conf {

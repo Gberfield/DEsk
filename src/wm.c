@@ -30,6 +30,7 @@
 #include "session.h"
 #include "lock.h"
 #include "camera.h"
+#include "cards.h"
 #include "occasion.h"
 #include "fonts.h"
 #include "desk.h"
@@ -1237,6 +1238,10 @@ struct desk_server {
 	double idle_at, wake_at;
 	struct wl_event_source *idle_timer;
 	bool dark, idle_held;
+	/* dark with no screen left: the last went while dark (a monitor
+	 * asleep that says it has been unplugged), and the next to come is
+	 * to wait dark too, until somebody is back */
+	bool dark_away;
 	uint32_t wake_key, wake_button;
 	struct wlr_idle_notifier_v1 *idle_notifier;
 	struct wl_list idle_holds;
@@ -1250,8 +1255,11 @@ struct desk_server {
 	struct wlr_output_manager_v1 *om;
 	struct wl_listener om_apply, om_test;
 	/* the screens set out again as displays.conf has them, once the ones
-	 * that are coming have all come (see "the screens as they were left") */
+	 * that are coming have all come (see "the screens as they were left");
+	 * and that, when they came while the desk was dark, left until it is
+	 * lit again (setting them out would light them) */
 	struct wl_event_source *disp_idle;
+	bool disp_after_dark;
 	/* the screens set out some other way: the bare desk on the ones beside
 	 * the desk's, and the windows on a screen that has gone put on one
 	 * that is there -- once, after all of a change (screens_idle_cb) */
@@ -1427,17 +1435,42 @@ static double span_inside(double start, double len, double end)
  * every time -- so its size is written down as it is handed over
  * (scene_new, scene_swap) and read back by whatever lays a box over it.
  * Read off b->buffer instead, a box went on being laid for the size of the
- * screen over a picture a third of it, and wlroots stopped the desk. */
+ * screen over a picture a third of it, and wlroots stopped the desk.
+ *
+ * And the picture itself, for the few whose pixels are read back later
+ * (scene_hold): a sheet's shadow, paper and corner, which what is under
+ * another sheet's turned-up corner is drawn from (curl_underlay). Let go
+ * of, the GPU screen showed the bare desk there (#10). */
 struct pic_size {
 	struct wlr_addon addon;
 	int w, h;
+	bool hold;
+	struct wlr_buffer *held;
 };
 
 static void pic_size_destroy(struct wlr_addon *addon)
 {
 	struct pic_size *p = wl_container_of(addon, p, addon);
+	if (p->held) {
+		wlr_buffer_unlock(p->held);
+	}
 	wlr_addon_finish(addon);
 	free(p);
+}
+
+/* p holding on to buffer, and no longer to the one before */
+static void pic_hold_swap(struct pic_size *p, struct wlr_buffer *buffer)
+{
+	if (p->held == buffer) {
+		return;
+	}
+	if (buffer) {
+		wlr_buffer_lock(buffer);
+	}
+	if (p->held) {
+		wlr_buffer_unlock(p->held);
+	}
+	p->held = buffer;
 }
 
 static const struct wlr_addon_interface PIC_SIZE = {
@@ -1445,7 +1478,7 @@ static const struct wlr_addon_interface PIC_SIZE = {
 	.destroy = pic_size_destroy,
 };
 
-static void pic_size_keep(struct wlr_scene_buffer *b, const struct wlr_buffer *buffer)
+static void pic_size_keep(struct wlr_scene_buffer *b, struct wlr_buffer *buffer)
 {
 	if (!buffer) {
 		return;
@@ -1463,6 +1496,39 @@ static void pic_size_keep(struct wlr_scene_buffer *b, const struct wlr_buffer *b
 	}
 	p->w = buffer->width;
 	p->h = buffer->height;
+	if (p->hold) {
+		pic_hold_swap(p, buffer);
+	}
+}
+
+/* b's pictures kept by us as well, from this one on, to be read back
+ * (scene_pic_buffer) after the scene has let go of them. */
+static void scene_hold(struct wlr_scene_buffer *b)
+{
+	if (!b || !b->buffer) {
+		return;
+	}
+	pic_size_keep(b, b->buffer);
+	struct wlr_addon *a = wlr_addon_find(&b->node.addons, b, &PIC_SIZE);
+	if (a) {
+		struct pic_size *p = wl_container_of(a, p, addon);
+		p->hold = true;
+		pic_hold_swap(p, b->buffer);
+	}
+}
+
+/* b's picture, from the scene or held by us (scene_hold); NULL if neither. */
+static struct wlr_buffer *scene_pic_buffer(struct wlr_scene_buffer *b)
+{
+	if (b->buffer) {
+		return b->buffer;
+	}
+	struct wlr_addon *a = wlr_addon_find(&b->node.addons, b, &PIC_SIZE);
+	if (!a) {
+		return NULL;
+	}
+	struct pic_size *p = wl_container_of(a, p, addon);
+	return p->held;
 }
 
 /* The size of b's picture, whether or not the scene still holds it; false
@@ -1769,6 +1835,7 @@ static void shadow_sync_body(struct desk_shadow *sh, struct wlr_scene_tree *tree
 		struct desk_buf *buffer = buf_create(w + pad * 2, h + pad * 2);
 		desk_draw_shadow_sprite(buffer->cr, w, h, 7.0, sh->side, sh->amount);
 		scene_put(&sh->node, tree, buffer, 0, 0, NULL);
+		scene_hold(sh->node);   /* read back under a corner (curl_underlay) */
 		sh->w = w;
 		sh->h = h;
 		sh->node->point_accepts_input = shadow_accepts;
@@ -2853,6 +2920,16 @@ struct sh_args {
 	time_t now;
 };
 
+/* What today puts on the bookcase -- on the 31st of October, things on
+ * its lower board -- told to the painter, and returned for the keys of
+ * what is painted from it. */
+static unsigned shelf_dress_today(void)
+{
+	unsigned dc = desk_occasion_today() & DESK_OCC_HALLOWEEN ? DESK_DECOR_HALLOWEEN : 0;
+	desk_shelf_dress(dc);
+	return dc;
+}
+
 static void sh_case_draw(cairo_t *cr, int w, int h, void *data)
 {
 	const struct sh_args *a = data;
@@ -3245,9 +3322,11 @@ static void paint_shelf_body(struct desk_server *server)
 		desk_apps_release(l);
 		double full[4] = { 0.0, 0.0, (double)w, (double)h };
 
+		unsigned dc = shelf_dress_today();
 		uint64_t key = 14695981039346656037ull;
 		key = key_add(key, &gen, sizeof gen);
 		key = key_add(key, &a.taken, sizeof a.taken);
+		key = key_add(key, &dc, sizeof dc);
 		sh_put(server, SH_CASE, key, force, full, sh_case_draw, &a);
 
 		double box[4];
@@ -4804,6 +4883,7 @@ static void shelf_snapshot(struct desk_server *server, struct wlr_scene_tree *tr
 	struct desk_buf *sharp = buf_create(ow, oh);
 	cairo_save(sharp->cr);
 	cairo_scale(sharp->cr, (double)ow / w, (double)oh / h);
+	shelf_dress_today();
 	desk_draw_shelf(sharp->cr, w, h, -1, 0.0, server->shelf_binder);
 	desk_draw_shelf_gadgets(sharp->cr, w, h, now);
 	cairo_restore(sharp->cr);
@@ -7577,6 +7657,21 @@ static void cc_live_opacity(struct desk_server *server, double a)
 	}
 }
 
+/* A view's traced sheet goes under what is drawn live over it: the
+ * console's needles and lamps, the letters in the post box. Those outlive
+ * the sheet, which desk_relayout drops for another level or size, and the
+ * sheet made again went on top of its layer and hid them until the next
+ * login (#12). */
+static void view_bases_under(struct desk_server *server)
+{
+	if (server->cc_base && server->cc_live) {
+		wlr_scene_node_place_below(&server->cc_base->node, &server->cc_live->node);
+	}
+	if (server->pb_base && server->pb_sprite.node) {
+		wlr_scene_node_place_below(&server->pb_base->node, &server->pb_sprite.node->node);
+	}
+}
+
 /* The settled view of the set, moved with the camera at the end of a move. */
 static void cc_follow(struct desk_server *server, int dx, int dy)
 {
@@ -7618,6 +7713,7 @@ static void paint_console_body(struct desk_server *server)
 		scene_put(&server->cc_base, server->layer_console, bb, 0, 0, NULL);
 		server->cc_base_w = w;
 		server->cc_base_h = h;
+		view_bases_under(server);
 	}
 
 	/* The live half: needles, lamps and the tube, on nothing -- and only
@@ -8428,6 +8524,7 @@ static void paint_post_body(struct desk_server *server)
 		scene_put(&server->pb_base, server->layer_post, bb, 0, 0, NULL);
 		server->pb_base_w = w;
 		server->pb_base_h = h;
+		view_bases_under(server);
 	}
 
 	/* The letters standing in the box change when the post does, or the
@@ -12201,6 +12298,7 @@ static void view_paint_chrome_body(struct desk_toplevel *view, int inner_w, int 
 			view->outer_w, view->outer_h, title, focused, 0, false);
 	}
 	scene_put(&view->chrome, view->scene_tree, buffer, -CHROME_PAD, -CHROME_PAD, view);
+	scene_hold(view->chrome);   /* read back under a corner (curl_underlay) */
 	/* The frame is a whole sheet of paper, the client lies on it: under
 	 * the client, then, not over it -- it is made at the first commit that
 	 * has a size, which is long after the client's own node, and a new
@@ -12837,10 +12935,11 @@ static void view_curl_reset(struct desk_toplevel *view)
 /* The pixels of a scene buffer we drew ourselves, at its size on screen. */
 static void paint_scene_buffer(cairo_t *cr, struct wlr_scene_buffer *sb, double x, double y)
 {
-	if (!sb || !sb->node.enabled || !sb->buffer || sb->buffer->impl != &cairo_buffer_impl) {
+	struct wlr_buffer *pic = sb && sb->node.enabled ? scene_pic_buffer(sb) : NULL;
+	if (!pic || pic->impl != &cairo_buffer_impl) {
 		return;
 	}
-	struct desk_buf *b = wl_container_of(sb->buffer, b, base);
+	struct desk_buf *b = wl_container_of(pic, b, base);
 	double bw = cairo_image_surface_get_width(b->surface);
 	double bh = cairo_image_surface_get_height(b->surface);
 	double dw = sb->dst_width > 0 ? sb->dst_width : bw;
@@ -12981,6 +13080,7 @@ static void view_curl_paint(struct desk_toplevel *view)
 	desk_draw_curl(buf->cr, box, sz, open, lift, view->curl_hot, view->maximized != 0,
 		view_title(view));
 	scene_put(&view->curl, view->scene_tree, buf, view->outer_w - (int)box, 0, view);
+	scene_hold(view->curl);   /* read back under a corner (curl_underlay) */
 	view->curl->point_accepts_input = curl_accepts;
 	wlr_scene_node_set_enabled(&view->curl->node, true);
 }
@@ -14448,6 +14548,7 @@ static void views_prewarm(struct desk_server *server)
 	}
 	switch (server->warm_step) {
 	case 0:
+		shelf_dress_today();
 		if (!desk_shelf_prewarm(w, h)) {
 			return;
 		}
@@ -14468,8 +14569,10 @@ static void views_prewarm(struct desk_server *server)
 		unsigned gen = l->generation;
 		desk_apps_release(l);
 		struct sh_args a = { server, -1, -1, -1, 0, 0.0, NULL, time(NULL) };
+		unsigned dc = shelf_dress_today();
 		uint64_t key = key_add(14695981039346656037ull, &gen, sizeof gen);
 		key = key_add(key, &a.taken, sizeof a.taken);
+		key = key_add(key, &dc, sizeof dc);
 		double full[4] = { 0.0, 0.0, (double)w, (double)h };
 		server->sh_w = w;
 		server->sh_h = h;
@@ -14487,6 +14590,7 @@ static void views_prewarm(struct desk_server *server)
 			wlr_scene_node_set_enabled(&server->cc_base->node, false);
 			server->cc_base_w = w;
 			server->cc_base_h = h;
+			view_bases_under(server);
 		}
 		break;
 	case 5:
@@ -14500,6 +14604,7 @@ static void views_prewarm(struct desk_server *server)
 			wlr_scene_node_set_enabled(&server->pb_base->node, false);
 			server->pb_base_w = w;
 			server->pb_base_h = h;
+			view_bases_under(server);
 		}
 		break;
 	default:
@@ -16687,6 +16792,7 @@ static cairo_surface_t *lock_snap_shelf(struct desk_server *server)
 	cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, ow, oh);
 	cairo_t *c = cairo_create(s);
 	cairo_scale(c, (double)ow / w, (double)oh / h);
+	shelf_dress_today();
 	desk_draw_shelf(c, w, h, -1, 0.0, server->shelf_binder);
 	desk_draw_shelf_gadgets(c, w, h, time(NULL));
 	cairo_destroy(c);
@@ -17187,9 +17293,13 @@ static int idle_ms(const struct desk_server *server)
 	return ms;
 }
 
-/* Has every screen that is on gone dark? */
+/* Has every screen that is on gone dark? With none, whether the desk had
+ * gone dark when the last went. */
 static bool screen_all_dark(struct desk_server *server)
 {
+	if (wl_list_empty(&server->outputs)) {
+		return server->dark_away;
+	}
 	bool any = false;
 	struct desk_output *o;
 	wl_list_for_each(o, &server->outputs, link) {
@@ -17382,12 +17492,19 @@ static void output_set_dark(struct desk_output *o, bool dark)
 	wlr_output_schedule_frame(out);
 }
 
+static void displays_changed(struct desk_server *server);
+
 static void screen_dark_sync(struct desk_server *server)
 {
 	server->dark = false;
 	struct desk_output *o;
 	wl_list_for_each(o, &server->outputs, link) {
 		server->dark |= o->dark;
+	}
+	if (!server->dark && server->disp_after_dark) {
+		/* screens that came while it was dark, set out now it is lit */
+		server->disp_after_dark = false;
+		displays_changed(server);
 	}
 }
 
@@ -17403,6 +17520,8 @@ static void screen_go_dark(struct desk_server *server)
 	wl_list_for_each(o, &server->outputs, link) {
 		output_set_dark(o, true);
 	}
+	/* with no screen there, it is the next to come that waits dark */
+	server->dark_away = wl_list_empty(&server->outputs);
 	screen_dark_sync(server);
 	idle_rearm(server);
 	wlr_log(WLR_INFO, "screen: nobody has touched anything for %.0f s: dark%s", idle,
@@ -17416,6 +17535,7 @@ static void screen_wake(struct desk_server *server)
 	wl_list_for_each(o, &server->outputs, link) {
 		output_set_dark(o, false);
 	}
+	server->dark_away = false;
 	screen_dark_sync(server);
 	server->idle_at = real_sec();
 	idle_rearm(server);
@@ -17457,8 +17577,9 @@ static int idle_cb(void *data)
  * had gone dark, this brings it back, and a press does nothing else: false,
  * and the caller drops it -- this one, and any other press until the screen
  * has had time to be seen (a monitor takes a moment to light, and a hand
- * that nudged the mouse to wake it is often already clicking). The pointer
- * moving goes where it goes either way. */
+ * that nudged the mouse to wake it is often already clicking) -- and any
+ * press while there is no screen at all. The pointer moving goes where it
+ * goes either way. */
 static bool input_seen(struct desk_server *server, const char *what)
 {
 	double now = real_sec();
@@ -17469,6 +17590,20 @@ static bool input_seen(struct desk_server *server, const char *what)
 	if (server->dark) {
 		wlr_log(WLR_INFO, "screen: woken by %s", what);
 		screen_wake(server);
+		server->wake_at = now;
+		return false;
+	}
+	if (wl_list_empty(&server->outputs) && !server->headless) {
+		/* no screen at all -- a monitor asleep that says it has been
+		 * unplugged, or one taken away: somebody back says the next to
+		 * come is lit, and a press lands on nothing, as on a dark screen,
+		 * for nobody can see what it would do */
+		if (server->dark_away) {
+			wlr_log(WLR_INFO, "screen: woken by %s, with no screen yet: the next to come "
+				"is lit", what);
+			server->dark_away = false;
+			idle_rearm(server);
+		}
 		server->wake_at = now;
 		return false;
 	}
@@ -18075,6 +18210,12 @@ static struct wlr_output_mode *disp_mode(struct wlr_output *out, const struct di
 static void displays_put_back(struct desk_server *server)
 {
 	struct disp_set now;
+	if (server->dark) {
+		/* a set out screen is somebody at it (om_try), which a screen
+		 * plugged in or come back while the desk is dark is not: later */
+		server->disp_after_dark = true;
+		return;
+	}
 	if (server->quitting || server->size_set || !displays_now(server, &now)) {
 		return;
 	}
@@ -19315,6 +19456,19 @@ static void keyboard_handle_key(struct wl_listener *listener, void *data)
 			handled = handle_keybinding(server, syms[i], modifiers);
 			if (handled) {
 				break;
+			}
+		}
+		/* In a second layout -- Arabic, Russian -- the letters are its own,
+		 * and Super+L was Super+lam: a shortcut goes by what the key is in
+		 * the first layout, at the level the modifiers held choose there. */
+		struct xkb_state *st = keyboard->wlr_keyboard->xkb_state;
+		if (!handled && (modifiers & (WLR_MODIFIER_LOGO | WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT))
+			&& xkb_state_serialize_layout(st, XKB_STATE_LAYOUT_EFFECTIVE) != 0) {
+			const xkb_keysym_t *first;
+			int n = xkb_keymap_key_get_syms_by_level(keyboard->wlr_keyboard->keymap, keycode, 0,
+				xkb_state_key_get_level(st, keycode, 0), &first);
+			for (int i = 0; i < n && !handled; i++) {
+				handled = handle_keybinding(server, first[i], modifiers);
 			}
 		}
 	}
@@ -21012,6 +21166,7 @@ static void output_destroy(struct wl_listener *listener, void *data)
 	struct desk_output *output = wl_container_of(listener, output, destroy);
 	struct desk_server *server = output->server;
 	(void)data;
+	bool window = output_is_window(output->wlr_output), was_dark = output->dark;
 	wl_list_remove(&output->frame.link);
 	wl_list_remove(&output->request_state.link);
 	wl_list_remove(&output->destroy.link);
@@ -21060,10 +21215,27 @@ static void output_destroy(struct wl_listener *listener, void *data)
 	/* Nested, the output IS the window, so closing the window has to end
 	 * the session. Without this the compositor went on running with
 	 * nothing to draw on -- invisible, holding its wayland socket, and
-	 * indistinguishable from a machine that had simply stopped. */
+	 * indistinguishable from a machine that had simply stopped.
+	 *
+	 * A real screen going is not the end, though: a monitor unplugged, a
+	 * switch turned to another machine, or one asleep after the desk went
+	 * dark that says it has been unplugged (many do: an HDMI or DisplayPort
+	 * monitor saving power drops its hot-plug line) -- which ended the
+	 * session, and every program in it, ten minutes after anybody had last
+	 * touched it, and left a black screen nothing would wake (#18). The
+	 * desk waits for a screen to come; dark as the one that went, if it
+	 * went dark (server_new_output). */
 	if (!server->headless && wl_list_empty(&server->outputs)) {
-		wlr_log(WLR_INFO, "last output went away; shutting down");
-		wl_display_terminate(server->wl_display);
+		if (window || server->quitting) {
+			wlr_log(WLR_INFO, "last output went away; shutting down");
+			wl_display_terminate(server->wl_display);
+		} else {
+			server->dark_away = was_dark;
+			wlr_log(WLR_INFO, "the last screen went away%s: waiting for one to come",
+				was_dark ? " while it was dark (a monitor asleep may say it is unplugged)"
+				: "");
+			idle_rearm(server);
+		}
 	}
 }
 
@@ -21269,22 +21441,33 @@ static void server_new_output(struct wl_listener *listener, void *data)
 {
 	struct desk_server *server = wl_container_of(listener, server, new_output);
 	struct wlr_output *wlr_output = data;
+	/* the desk already set out: a screen plugged in after the start, or
+	 * come back after the last one went (output_destroy) */
+	bool again = server->desk_w >= 8 && server->desk_h >= 8;
+	/* A real screen plugged in while nobody is here, or come back while
+	 * the desk is dark, comes in dark: not lit for a moment and put out
+	 * again, which would wake a monitor that drops its hot-plug line
+	 * asleep and raises it now and then, every time it did. It keeps the
+	 * mode it is to be lit in (output_set_dark). */
+	bool wait_dark = (server->dark || server->dark_away) && !output_is_window(wlr_output);
 	wlr_output_init_render(wlr_output, server->allocator, server->renderer);
-	struct wlr_output_state state;
-	wlr_output_state_init(&state);
-	wlr_output_state_set_enabled(&state, true);
 	/* --size picks the window's size under a nested backend too, not just
 	 * the headless one: an X11 window would otherwise come up at whatever
 	 * wlroots defaults to. */
 	struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
-	if (server->size_set) {
-		wlr_output_state_set_custom_mode(&state, server->headless_w,
-			server->headless_h, 0);
-	} else if (mode != NULL) {
-		wlr_output_state_set_mode(&state, mode);
+	if (!wait_dark) {
+		struct wlr_output_state state;
+		wlr_output_state_init(&state);
+		wlr_output_state_set_enabled(&state, true);
+		if (server->size_set) {
+			wlr_output_state_set_custom_mode(&state, server->headless_w,
+				server->headless_h, 0);
+		} else if (mode != NULL) {
+			wlr_output_state_set_mode(&state, mode);
+		}
+		wlr_output_commit_state(wlr_output, &state);
+		wlr_output_state_finish(&state);
 	}
-	wlr_output_commit_state(wlr_output, &state);
-	wlr_output_state_finish(&state);
 	nested_name(server, wlr_output);
 
 	struct desk_output *output = calloc(1, sizeof(*output));
@@ -21297,12 +21480,31 @@ static void server_new_output(struct wl_listener *listener, void *data)
 	output->destroy.notify = output_destroy;
 	wl_signal_add(&wlr_output->events.destroy, &output->destroy);
 	wl_list_insert(&server->outputs, &output->link);
+	if (wait_dark) {
+		output->dark = true;
+		output->dark_mode = server->size_set ? NULL : mode;
+		output->dark_w = server->size_set ? server->headless_w : mode ? mode->width : 0;
+		output->dark_h = server->size_set ? server->headless_h : mode ? mode->height : 0;
+		output->dark_refresh = !server->size_set && mode ? mode->refresh : 0;
+	}
 
 	struct wlr_output_layout_output *l_output = wlr_output_layout_add_auto(server->output_layout, wlr_output);
 	struct wlr_scene_output *scene_output = wlr_scene_output_create(server->scene, wlr_output);
 	wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
 
-	if (first_output(server) == wlr_output) {
+	if (first_output(server) == wlr_output && again) {
+		/* the desk's screen come back, or another in its place: the desk
+		 * set out again for it, as when the desk moves to a screen that
+		 * is left (output_destroy) */
+		int w = output->dark_w, h = output->dark_h;
+		if (!wait_dark) {
+			wlr_output_effective_resolution(wlr_output, &w, &h);
+		}
+		wlr_log(WLR_INFO, "%s: %dx%d, the desk's screen again%s", wlr_output->name, w, h,
+			wait_dark ? ", waiting dark until somebody is back" : "");
+		desk_resize_to(server, server->size_set ? server->headless_w : w,
+			server->size_set ? server->headless_h : h);
+	} else if (first_output(server) == wlr_output) {
 		/* The size we ASKED for, not the one the backend happens to be
 		 * showing this instant. Under X11 the window comes up at the
 		 * backend's own default and only reaches the custom mode a beat
@@ -21330,9 +21532,20 @@ static void server_new_output(struct wl_listener *listener, void *data)
 		desk_write_png(server->dump_path, server->desk_w, server->desk_h, true);
 		wlr_log(WLR_INFO, "dumped chrome to %s", server->dump_path);
 	}
-	/* plugged in while nobody is here: it waits dark with the rest */
-	if (server->dark) {
+	/* plugged in while nobody is here: it waits dark with the rest -- or,
+	 * when the last screen went while dark, as that one would have; a key
+	 * or the pointer lights it. Plugged in otherwise, it is somebody at
+	 * the desk. */
+	if (server->dark || server->dark_away) {
+		/* a real screen has come in dark already (wait_dark), a window
+		 * on another desktop has its black put over it */
 		output_set_dark(output, true);
+		server->dark_away = false;
+		screen_dark_sync(server);
+		idle_rearm(server);
+	} else if (again) {
+		server->idle_at = real_sec();
+		idle_rearm(server);
 	}
 	om_publish(server);
 	/* and the screens set out as they were last time these were here */
@@ -21579,8 +21792,18 @@ static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *da
 {
 	struct desk_toplevel *toplevel = wl_container_of(listener, toplevel, request_maximize);
 	(void)data;
-	if (toplevel->xdg_toplevel->base->initialized && !toplevel->ime_popup) {
+	if (!toplevel->xdg_toplevel->base->initialized || toplevel->ime_popup) {
+		return;
+	}
+	/* set_maximized and unset_maximized both come here: what is asked for,
+	 * not the other of what it is -- a browser coming back from the whole
+	 * screen asks again for the opened-out sheet it had, and was given the
+	 * small one. Asked for what it is, it is told so (a configure). */
+	bool want = toplevel->xdg_toplevel->requested.maximized;
+	if (want != (toplevel->maximized != 0)) {
 		view_toggle_max(toplevel);
+	} else {
+		view_set_maximized(toplevel, toplevel->maximized != 0);
 	}
 }
 
@@ -22672,6 +22895,28 @@ static void init_client_buffers(struct desk_server *server)
 	}
 }
 
+/* On the machine's own screens, the firmware's framebuffer left out when a
+ * real card is there too (cards.c), unless the cards are named already
+ * (WLR_DRM_DEVICES) or the desk is nested in another's window. */
+static bool cards_pick(void)
+{
+	const char *be = getenv("WLR_BACKENDS");
+	bool nested = getenv("WAYLAND_DISPLAY") || getenv("WAYLAND_SOCKET") || getenv("DISPLAY");
+	if (getenv("WLR_DRM_DEVICES") || (be ? !strstr(be, "drm") : nested)) {
+		return false;
+	}
+	const char *seat = getenv("XDG_SEAT");
+	char list[512], why[256];
+	if (!desk_cards_pick("/sys/class/drm", "/run/udev/data", seat && *seat ? seat : "seat0",
+			list, sizeof list, why, sizeof why)) {
+		return false;
+	}
+	wlr_log(WLR_INFO, "screens: %s is the firmware's framebuffer, with a real card beside it: "
+		"left out (the desk goes on %s)", why, list);
+	setenv("WLR_DRM_DEVICES", list, 1);
+	return true;
+}
+
 int main(int argc, char **argv)
 {
 	g_start_real = real_sec();
@@ -22811,7 +23056,12 @@ int main(int argc, char **argv)
 		setenv("WLR_LIBINPUT_NO_DEVICES", "1", 1);
 		server.backend = wlr_headless_backend_create(loop);
 	} else {
+		bool picked = cards_pick();
 		server.backend = wlr_backend_autocreate(loop, &server.session);
+		if (picked) {
+			/* read once, as the backend is made: not for what we start */
+			unsetenv("WLR_DRM_DEVICES");
+		}
 	}
 	if (server.backend == NULL) {
 		wlr_log(WLR_ERROR, "failed to create backend");

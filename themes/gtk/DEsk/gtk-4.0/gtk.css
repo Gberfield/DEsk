@@ -1,0 +1,23 @@
+/* DEsk -- GTK 4 programs dressed for the desk: paper, ink and brass.
+ *
+ * GTK 4's own theme (Default), with the desk's colours over it: the same
+ * paper, ink, brass and manila folders as for GTK 3 (../gtk-3.0), in
+ * paper.css. A GTK 4 program that follows the theme gets this in a DEsk
+ * session (desk-session names the theme DEsk in its own layer of
+ * settings). A program made with libadwaita -- most of GNOME's -- leaves
+ * themes alone and has paper.css only as the user's own GTK 4 stylesheet
+ * (README). */
+
+@import url("resource:///org/gtk/libgtk/theme/Default/Default-light.css");
+@import url("paper.css");
+
+/* what GTK 4's own theme still marks in its blue: the chosen tab of a
+ * notebook, in brass, and the one under the pointer in manila */
+notebook > header.top > tabs > tab:hover { box-shadow: inset 0 -4px #d9c393; }
+notebook > header.top > tabs > tab:checked { box-shadow: inset 0 -4px #a8783a; }
+notebook > header.bottom > tabs > tab:hover { box-shadow: inset 0 4px #d9c393; }
+notebook > header.bottom > tabs > tab:checked { box-shadow: inset 0 4px #a8783a; }
+notebook > header.left > tabs > tab:hover { box-shadow: inset -4px 0 #d9c393; }
+notebook > header.left > tabs > tab:checked { box-shadow: inset -4px 0 #a8783a; }
+notebook > header.right > tabs > tab:hover { box-shadow: inset 4px 0 #d9c393; }
+notebook > header.right > tabs > tab:checked { box-shadow: inset 4px 0 #a8783a; }

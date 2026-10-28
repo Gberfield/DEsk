@@ -1,0 +1,765 @@
+/* By VKOWinHecker201 (GitHub #17), given to DEsk under its MIT licence:
+ * written as the user's own GTK 4 stylesheet, over libadwaita's or GTK's
+ * own -- it sets colours and how things are drawn, not their shapes. */
+
+/* DEsk -- GTK 4 & Libadwaita programs dressed for the desk: paper, ink and brass.
+ *
+ * Adapted from the DEsk GTK 3 stylesheet for GTK 4 and libadwaita (1.0 - 1.9+).
+ * Provides warm paper backgrounds (#efe6d3), whiter paper views/cards (#fbf7ee),
+ * dark ink text (#2e2318), brass selections/accents (#a8783a), and manila folder
+ * headerbars/toolbars (#efe2c6 -> #e0cca5).
+ */
+
+/* ---- 1. GTK 3/4 Legacy Named Colors ---- */
+
+@define-color theme_fg_color #2e2318;
+@define-color theme_text_color #2b2116;
+@define-color theme_bg_color #efe6d3;
+@define-color theme_base_color #fbf7ee;
+@define-color theme_selected_bg_color #a8783a;
+@define-color theme_selected_fg_color #fffaf0;
+@define-color insensitive_bg_color #ebe2cf;
+@define-color insensitive_fg_color #9a8b72;
+@define-color insensitive_base_color #f3ecdd;
+@define-color theme_unfocused_fg_color #2e2318;
+@define-color theme_unfocused_text_color #2b2116;
+@define-color theme_unfocused_bg_color #efe6d3;
+@define-color theme_unfocused_base_color #fbf7ee;
+@define-color theme_unfocused_selected_bg_color #b8956a;
+@define-color theme_unfocused_selected_fg_color #fffaf0;
+@define-color unfocused_insensitive_color #9a8b72;
+@define-color borders #c4ad86;
+@define-color unfocused_borders #cdb994;
+@define-color warning_color #b9731c;
+@define-color error_color #b23a2a;
+@define-color success_color #3f7a4a;
+@define-color desk_bar_top #efe2c6;
+@define-color desk_bar_bottom #e0cca5;
+@define-color desk_bar_border #b89c6c;
+@define-color desk_link #7a4b1e;
+
+/* ---- 2. Libadwaita Named Colors (Libadwaita 1.0 - 1.5) ---- */
+
+@define-color accent_bg_color #a8783a;
+@define-color accent_fg_color #fffaf0;
+@define-color accent_color #85592a;
+
+@define-color destructive_bg_color #a33826;
+@define-color destructive_fg_color #fffaf0;
+@define-color destructive_color #b23a2a;
+
+@define-color success_bg_color #3f7a4a;
+@define-color success_fg_color #fffaf0;
+@define-color success_color #3f7a4a;
+
+@define-color warning_bg_color #b9731c;
+@define-color warning_fg_color #fffaf0;
+@define-color warning_color #b9731c;
+
+@define-color error_bg_color #b23a2a;
+@define-color error_fg_color #fffaf0;
+@define-color error_color #b23a2a;
+
+@define-color window_bg_color #efe6d3;
+@define-color window_fg_color #2e2318;
+
+@define-color view_bg_color #fbf7ee;
+@define-color view_fg_color #2b2116;
+
+@define-color headerbar_bg_color #e0cca5;
+@define-color headerbar_fg_color #2e2318;
+@define-color headerbar_border_color #b89c6c;
+@define-color headerbar_backdrop_color #e5d5b4;
+@define-color headerbar_shade_color rgba(90, 60, 25, 0.18);
+@define-color headerbar_darker_shade_color rgba(90, 60, 25, 0.28);
+
+@define-color sidebar_bg_color #ebe1cb;
+@define-color sidebar_fg_color #3a2c1e;
+@define-color sidebar_backdrop_color #ede4d1;
+@define-color sidebar_border_color #c4ad86;
+@define-color sidebar_shade_color rgba(90, 60, 25, 0.12);
+
+@define-color secondary_sidebar_bg_color #efe6d3;
+@define-color secondary_sidebar_fg_color #2e2318;
+@define-color secondary_sidebar_backdrop_color #efe6d3;
+@define-color secondary_sidebar_border_color #c4ad86;
+@define-color secondary_sidebar_shade_color rgba(90, 60, 25, 0.10);
+
+@define-color card_bg_color #fbf7ee;
+@define-color card_fg_color #2b2116;
+@define-color card_shade_color rgba(90, 60, 25, 0.12);
+
+@define-color dialog_bg_color #efe6d3;
+@define-color dialog_fg_color #2e2318;
+
+@define-color popover_bg_color #f8f2e5;
+@define-color popover_fg_color #2e2318;
+@define-color popover_shade_color rgba(90, 60, 25, 0.15);
+
+@define-color thumbnail_bg_color #fbf7ee;
+@define-color thumbnail_fg_color #2b2116;
+
+@define-color shade_color rgba(90, 60, 25, 0.12);
+@define-color scrollbar_outline_color #fbf7ee;
+
+/* ---- 3. Libadwaita CSS Custom Properties (GTK 4.16+ / Libadwaita 1.6 - 1.9+) ---- */
+
+:root,
+window,
+dialog,
+popover,
+tooltip {
+	--accent-bg-color: #a8783a;
+	--accent-fg-color: #fffaf0;
+	--accent-color: #85592a;
+
+	--destructive-bg-color: #a33826;
+	--destructive-fg-color: #fffaf0;
+	--destructive-color: #b23a2a;
+
+	--success-bg-color: #3f7a4a;
+	--success-fg-color: #fffaf0;
+	--success-color: #3f7a4a;
+
+	--warning-bg-color: #b9731c;
+	--warning-fg-color: #fffaf0;
+	--warning-color: #b9731c;
+
+	--error-bg-color: #b23a2a;
+	--error-fg-color: #fffaf0;
+	--error-color: #b23a2a;
+
+	--window-bg-color: #efe6d3;
+	--window-fg-color: #2e2318;
+
+	--view-bg-color: #fbf7ee;
+	--view-fg-color: #2b2116;
+
+	--headerbar-bg-color: #e0cca5;
+	--headerbar-fg-color: #2e2318;
+	--headerbar-border-color: #b89c6c;
+	--headerbar-backdrop-color: #e5d5b4;
+	--headerbar-shade-color: rgba(90, 60, 25, 0.18);
+	--headerbar-darker-shade-color: rgba(90, 60, 25, 0.28);
+
+	--sidebar-bg-color: #ebe1cb;
+	--sidebar-fg-color: #3a2c1e;
+	--sidebar-backdrop-color: #ede4d1;
+	--sidebar-border-color: #c4ad86;
+	--sidebar-shade-color: rgba(90, 60, 25, 0.12);
+
+	--secondary-sidebar-bg-color: #efe6d3;
+	--secondary-sidebar-fg-color: #2e2318;
+	--secondary-sidebar-backdrop-color: #efe6d3;
+	--secondary-sidebar-border-color: #c4ad86;
+	--secondary-sidebar-shade-color: rgba(90, 60, 25, 0.10);
+
+	--card-bg-color: #fbf7ee;
+	--card-fg-color: #2b2116;
+	--card-shade-color: rgba(90, 60, 25, 0.12);
+
+	--dialog-bg-color: #efe6d3;
+	--dialog-fg-color: #2e2318;
+
+	--popover-bg-color: #f8f2e5;
+	--popover-fg-color: #2e2318;
+	--popover-shade-color: rgba(90, 60, 25, 0.15);
+
+	--thumbnail-bg-color: #fbf7ee;
+	--thumbnail-fg-color: #2b2116;
+
+	--overview-bg-color: #e4d6b9;
+	--overview-fg-color: #2e2318;
+
+	--active-toggle-bg-color: #c99b54;
+	--active-toggle-fg-color: #fffaf0;
+
+	--shade-color: rgba(90, 60, 25, 0.12);
+	--scrollbar-outline-color: #fbf7ee;
+}
+
+/* ---- 4. The Paper (Windows, Views, Lists, Cards) ---- */
+
+window,
+window.background,
+.background,
+dialog,
+window.dialog,
+messagedialog,
+adw-dialog,
+sheet {
+	background-color: @theme_bg_color;
+	color: @theme_fg_color;
+}
+
+.view,
+iconview,
+.view text,
+iconview text,
+textview,
+textview text,
+treeview.view,
+listview,
+gridview,
+columnview,
+list,
+listbox,
+flowbox,
+.content-view,
+.card,
+list.boxed-list,
+list.boxed-list > row,
+list.boxed-list-separate > row {
+	background-color: @theme_base_color;
+	color: @theme_text_color;
+}
+
+.card,
+list.boxed-list,
+list.boxed-list-separate > row {
+	border: 1px solid @borders;
+}
+
+.view:selected,
+.view:selected:focus,
+.view text:selected,
+iconview:selected,
+iconview:selected:focus,
+iconview text:selected,
+textview text:selected,
+treeview.view:selected,
+treeview.view:selected:focus,
+listview > row:selected,
+gridview > child:selected,
+columnview > listview > row:selected,
+list > row:selected,
+listbox > row:selected,
+flowbox > flowboxchild:selected,
+row:selected,
+.view text selection,
+iconview text selection,
+textview text selection,
+entry selection,
+entry > text > selection,
+searchentry > text > selection,
+label selection,
+spinbutton selection,
+spinbutton > text > selection,
+editablelabel > stack > text > selection {
+	background-color: @theme_selected_bg_color;
+	color: @theme_selected_fg_color;
+}
+
+.view:selected:backdrop,
+iconview:selected:backdrop,
+treeview.view:selected:backdrop,
+listview > row:selected:backdrop,
+gridview > child:selected:backdrop,
+list > row:selected:backdrop,
+row:selected:backdrop {
+	background-color: @theme_unfocused_selected_bg_color;
+	color: @theme_unfocused_selected_fg_color;
+}
+
+treeview.view header button,
+treeview.view header button:hover,
+columnview > header > button,
+columnview > header > button:hover {
+	background-image: linear-gradient(to bottom, #f5eedf, #e9dcc0);
+	border-color: @borders;
+	color: #5a4630;
+}
+
+*:link,
+link,
+button.link,
+button.link label {
+	color: @desk_link;
+}
+
+*:visited,
+link:visited {
+	color: #5e3a18;
+}
+
+separator {
+	background-color: alpha(@borders, 0.7);
+}
+
+/* ---- 5. The Bars of a Window: Manila Folder Headerbars & Toolbars ---- */
+
+headerbar,
+.titlebar,
+toolbarview > .top-bar,
+toolbarview > .bottom-bar,
+menubar,
+toolbar,
+.toolbar,
+.primary-toolbar,
+.inline-toolbar,
+actionbar > revealer > box,
+searchbar > revealer > box {
+	background-color: @desk_bar_bottom;
+	background-image: linear-gradient(to bottom, @desk_bar_top, @desk_bar_bottom);
+	border-color: @desk_bar_border;
+	color: @theme_fg_color;
+	box-shadow: inset 0 1px rgba(255, 250, 235, 0.6);
+}
+
+headerbar {
+	border-bottom: 1px solid @desk_bar_border;
+}
+
+/* Avoid double gradient/border when headerbar sits inside a libadwaita toolbarview top-bar */
+toolbarview > .top-bar > headerbar,
+toolbarview > .top-bar > windowhandle > headerbar {
+	background: transparent;
+	border-bottom: none;
+	box-shadow: none;
+}
+
+toolbarview > .top-bar {
+	border-bottom: 1px solid @desk_bar_border;
+}
+
+toolbarview > .bottom-bar,
+actionbar > revealer > box {
+	border-top: 1px solid @desk_bar_border;
+}
+
+headerbar:backdrop,
+.titlebar:backdrop,
+toolbarview > .top-bar:backdrop,
+toolbarview > .bottom-bar:backdrop,
+menubar:backdrop,
+toolbar:backdrop {
+	background-image: linear-gradient(to bottom, #efe4cc, #e5d5b4);
+	color: #6b5a44;
+}
+
+menubar > item,
+menubar > menuitem {
+	color: @theme_fg_color;
+}
+
+menubar > item:hover,
+menubar > item:selected,
+menubar > menuitem:hover {
+	background-color: @theme_selected_bg_color;
+	color: @theme_selected_fg_color;
+	box-shadow: none;
+}
+
+statusbar {
+	background-color: #e9dfca;
+	color: #5a4630;
+	border-top: 1px solid @borders;
+}
+
+/* ---- 6. Buttons: Card, Pressed In When Down, Brass When On ---- */
+
+button,
+menubutton > button,
+dropdown > button,
+splitbutton > button,
+splitbutton > menubutton > button,
+colorbutton > button,
+fontbutton > button {
+	background-image: linear-gradient(to bottom, #f7efdf, #e4d4b2);
+	border: 1px solid #ad9163;
+	color: @theme_fg_color;
+	text-shadow: 0 1px rgba(255, 250, 235, 0.6);
+	box-shadow: inset 0 1px rgba(255, 252, 242, 0.8), 0 1px rgba(90, 60, 25, 0.12);
+}
+
+button:hover,
+menubutton > button:hover,
+dropdown > button:hover,
+splitbutton > button:hover,
+splitbutton > menubutton > button:hover {
+	background-image: linear-gradient(to bottom, #fcf6ea, #eadcbe);
+	border-color: #a1855a;
+}
+
+button:active,
+menubutton > button:active,
+dropdown > button:active,
+splitbutton > button:active {
+	background-image: linear-gradient(to bottom, #d8c39a, #e5d4b0);
+	border-color: #96784a;
+	box-shadow: inset 0 1px 2px rgba(80, 50, 20, 0.25);
+}
+
+button:checked,
+togglebutton:checked,
+menubutton > button:checked,
+togglegroup > toggle:checked {
+	background-image: linear-gradient(to bottom, #c99b54, #b4823e);
+	border-color: #85592a;
+	color: #fffaf0;
+	text-shadow: 0 -1px rgba(90, 55, 15, 0.4);
+	box-shadow: inset 0 1px 2px rgba(80, 50, 20, 0.25);
+}
+
+button:disabled,
+menubutton > button:disabled,
+dropdown > button:disabled,
+splitbutton > button:disabled {
+	background-image: none;
+	background-color: #eee6d4;
+	border-color: #d2c19f;
+	color: @insensitive_fg_color;
+	box-shadow: none;
+	text-shadow: none;
+}
+
+button.flat,
+menubutton.flat > button,
+splitbutton.flat > button,
+splitbutton.flat > menubutton > button,
+toolbar button,
+.toolbar button,
+headerbar button.flat,
+.path-bar button,
+placessidebar row button,
+button.image-button.flat,
+windowcontrols > button,
+windowcontrols > button > image {
+	background-image: none;
+	background-color: transparent;
+	border-color: transparent;
+	box-shadow: none;
+	text-shadow: none;
+}
+
+button.flat:hover,
+menubutton.flat > button:hover,
+splitbutton.flat > button:hover,
+toolbar button:hover,
+.toolbar button:hover,
+headerbar button.flat:hover,
+.path-bar button:hover,
+windowcontrols > button:hover > image {
+	background-image: linear-gradient(to bottom, #f9f2e3, #ebdec3);
+	border-color: #b39769;
+	box-shadow: inset 0 1px rgba(255, 252, 242, 0.8);
+}
+
+button.flat:checked,
+menubutton.flat > button:checked,
+toolbar button:checked,
+.toolbar button:checked,
+headerbar button.flat:checked,
+.path-bar button:checked {
+	background-image: linear-gradient(to bottom, #e6d4ad, #d9c393);
+	border-color: #a1855a;
+	color: @theme_fg_color;
+	text-shadow: none;
+}
+
+button.suggested-action,
+menubutton.suggested-action > button,
+splitbutton.suggested-action > button {
+	background-image: linear-gradient(to bottom, #c99b54, #a8783a);
+	border-color: #85592a;
+	color: #fffaf0;
+	text-shadow: 0 -1px rgba(90, 55, 15, 0.5);
+}
+
+button.suggested-action:hover,
+menubutton.suggested-action > button:hover {
+	background-image: linear-gradient(to bottom, #d4a760, #b4823e);
+	border-color: #754d22;
+	color: #fffaf0;
+}
+
+button.destructive-action,
+menubutton.destructive-action > button,
+splitbutton.destructive-action > button {
+	background-image: linear-gradient(to bottom, #c8553f, #a33826);
+	border-color: #7d2617;
+	color: #fffaf0;
+}
+
+/* ---- 7. What Is Written In (Entries, Search, Spinbuttons) ---- */
+
+entry,
+searchentry,
+spinbutton:not(.vertical),
+spinbutton.vertical > text,
+row.entry {
+	background-color: @theme_base_color;
+	background-image: none;
+	border: 1px solid #b8a07a;
+	color: @theme_text_color;
+	box-shadow: inset 0 1px 1px rgba(80, 55, 25, 0.12);
+}
+
+entry:focus,
+entry:focus-within,
+searchentry:focus,
+searchentry:focus-within,
+spinbutton:focus,
+spinbutton:focus-within {
+	border-color: @theme_selected_bg_color;
+	box-shadow: inset 0 0 0 1px alpha(@theme_selected_bg_color, 0.6);
+	outline: none;
+}
+
+entry:disabled,
+searchentry:disabled,
+spinbutton:disabled {
+	background-color: @insensitive_base_color;
+	color: @insensitive_fg_color;
+}
+
+/* ---- 8. Menus, Popovers, Tooltips & Toasts ---- */
+
+popover.background {
+	background-color: transparent;
+}
+
+popover > contents,
+popover > arrow {
+	background-color: #f8f2e5;
+	border: 1px solid #b89c6c;
+	color: @theme_fg_color;
+}
+
+popover modelbutton:hover,
+popover modelbutton:selected,
+popover.menu modelbutton:hover,
+popover.menu modelbutton:selected,
+modelbutton.flat:hover,
+modelbutton.flat:selected,
+popover.menu row:hover,
+popover.menu row:selected {
+	background-color: @theme_selected_bg_color;
+	color: @theme_selected_fg_color;
+}
+
+popover modelbutton:disabled,
+popover.menu modelbutton:disabled {
+	color: @insensitive_fg_color;
+}
+
+tooltip,
+tooltip.background,
+tooltip > box,
+toast {
+	background-color: rgba(46, 35, 24, 0.94);
+	color: #f8f1e2;
+	border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+tooltip *,
+toast * {
+	color: #f8f1e2;
+}
+
+/* ---- 9. The Side Pane: A Folder's Inside, A Shade Darker ---- */
+
+.sidebar,
+.sidebar-pane,
+placessidebar,
+placessidebar list,
+stacksidebar,
+stacksidebar list,
+.navigation-sidebar,
+.sidebar list,
+.sidebar row {
+	background-color: #ebe1cb;
+	color: #3a2c1e;
+	border-color: @borders;
+}
+
+.navigation-sidebar > row,
+placessidebar row,
+stacksidebar row {
+	background-color: transparent;
+	color: #3a2c1e;
+}
+
+.navigation-sidebar > row:hover:not(:selected),
+placessidebar row:hover:not(:selected),
+stacksidebar row:hover:not(:selected) {
+	background-color: alpha(#a8783a, 0.15);
+}
+
+placessidebar row:selected,
+.sidebar row:selected,
+stacksidebar row:selected,
+.navigation-sidebar > row:selected {
+	background-color: @theme_selected_bg_color;
+	color: @theme_selected_fg_color;
+}
+
+placessidebar row:selected *,
+.navigation-sidebar > row:selected * {
+	color: @theme_selected_fg_color;
+}
+
+/* ---- 10. Tabs: Index Tabs on a Folder (Notebook & AdwTabBar) ---- */
+
+notebook > header,
+tabbar .box {
+	background-color: #e4d6b9;
+	border-color: @desk_bar_border;
+}
+
+notebook > header > tabs > tab,
+tabbar tab {
+	color: #6b5a44;
+	background-color: transparent;
+}
+
+notebook > header > tabs > tab:hover,
+tabbar tab:hover {
+	color: @theme_fg_color;
+	box-shadow: none;
+}
+
+notebook > header > tabs > tab:checked,
+tabbar tab:checked,
+tabbar tab:selected {
+	background-color: @theme_bg_color;
+	color: @theme_fg_color;
+	box-shadow: inset 0 3px @theme_selected_bg_color;
+}
+
+notebook > stack:not(:only-child) {
+	background-color: @theme_bg_color;
+}
+
+/* ---- 11. Scrollbars, Switches, Checks, Progressbars & Sliders ---- */
+
+scrollbar {
+	background-color: transparent;
+	border-color: transparent;
+}
+
+scrollbar slider,
+scrollbar > range > trough > slider {
+	background-color: #a88d63;
+	border-color: transparent;
+}
+
+scrollbar slider:hover,
+scrollbar > range > trough > slider:hover {
+	background-color: #8f7148;
+}
+
+scrollbar slider:active,
+scrollbar > range > trough > slider:active {
+	background-color: @theme_selected_bg_color;
+}
+
+switch {
+	background-color: #ddcfb2;
+	border: 1px solid #ad9163;
+}
+
+switch:checked {
+	background-color: @theme_selected_bg_color;
+	border-color: #85592a;
+}
+
+switch > slider,
+switch slider {
+	background-image: linear-gradient(to bottom, #fbf6ea, #e8dabd);
+	border: 1px solid #96784a;
+}
+
+checkbutton > check,
+checkbutton > radio,
+treeview.view check,
+treeview.view radio,
+columnview check,
+columnview radio,
+check,
+radio {
+	background-image: linear-gradient(to bottom, #fdf9f0, #ece0c6);
+	border: 1px solid #a1855a;
+	color: @theme_fg_color;
+}
+
+checkbutton > check:checked,
+checkbutton > radio:checked,
+checkbutton > check:indeterminate,
+checkbutton > radio:indeterminate,
+check:checked,
+radio:checked,
+check:indeterminate,
+radio:indeterminate {
+	background-image: linear-gradient(to bottom, #c99b54, #a8783a);
+	border-color: #85592a;
+	color: #fffaf0;
+}
+
+progressbar > trough > progress,
+progressbar progress,
+levelbar > trough > block.filled,
+levelbar block.filled,
+scale > trough > highlight,
+scale > trough > fill,
+scale highlight,
+scale fill {
+	background-color: @theme_selected_bg_color;
+	background-image: linear-gradient(to bottom, #d1a660, #a8783a);
+	border-color: #85592a;
+}
+
+progressbar > trough,
+progressbar trough,
+levelbar > trough,
+levelbar trough,
+scale > trough,
+scale trough {
+	background-color: #e1d5bb;
+	border: 1px solid #bfa67c;
+}
+
+scale > trough > slider,
+scale slider {
+	background-image: linear-gradient(to bottom, #fbf5e7, #e5d6b6);
+	border: 1px solid #96784a;
+}
+
+/* ---- 12. Drag-and-Drop, Rubberband & Info/Banner Bars ---- */
+
+.view:drop(active),
+treeview.view:drop(active),
+iconview:drop(active),
+listview:drop(active),
+gridview:drop(active),
+list:drop(active),
+row:drop(active) {
+	box-shadow: inset 0 0 0 2px @theme_selected_bg_color;
+}
+
+.view rubberband,
+iconview rubberband,
+treeview.view rubberband,
+listview rubberband,
+gridview rubberband,
+rubberband {
+	background-color: alpha(@theme_selected_bg_color, 0.25);
+	border: 1px solid @theme_selected_bg_color;
+}
+
+infobar.info > revealer > box,
+banner > revealer > widget {
+	background-color: #e9dcbc;
+	color: @theme_fg_color;
+	border-bottom: 1px solid @borders;
+}
+
+infobar.warning > revealer > box {
+	background-color: #e9c98a;
+	color: @theme_fg_color;
+}
+
+infobar.error > revealer > box {
+	background-color: #c8553f;
+	color: #fffaf0;
+}

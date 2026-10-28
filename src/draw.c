@@ -8600,6 +8600,10 @@ static void curl_glyph(cairo_t *cr, int i, double x, double y, double z)
 static void print_word(cairo_t *cr, const char *s, double x, double y, double size,
 	double r, double g, double b, double a)
 {
+	/* a window's name may be an X title in Latin-1, which cairo will not
+	 * take: it would stop drawing on cr altogether */
+	char clean[1024];
+	s = utf8_clean(s, clean, sizeof clean);
 	cairo_save(cr);
 	desk_font_select(cr, DESK_FONT_PRINT, s, true, false);
 	cairo_set_font_size(cr, size);
@@ -8611,6 +8615,8 @@ static void print_word(cairo_t *cr, const char *s, double x, double y, double si
 
 static double word_width(cairo_t *cr, const char *s, double size)
 {
+	char clean[1024];
+	s = utf8_clean(s, clean, sizeof clean);
 	cairo_save(cr);
 	desk_font_select(cr, DESK_FONT_PRINT, s, true, false);
 	cairo_set_font_size(cr, size);
@@ -12930,6 +12936,16 @@ int desk_shelf_hit(int screen_w, int screen_h, double px, double py)
 static cairo_surface_t *g_shelf_base;
 static unsigned g_shelf_base_room;   /* rr->serial it was painted for; 0 none */
 static unsigned g_shelf_base_gen;
+/* what the day puts on the lower board (DESK_DECOR_HALLOWEEN, or 0), and
+ * what it was when the case was painted */
+static unsigned g_shelf_decor, g_shelf_base_decor;
+
+static void shelf_fall_paint(const struct room_render *rr, cairo_surface_t *s);
+
+void desk_shelf_dress(unsigned decor)
+{
+	g_shelf_decor = decor & DESK_DECOR_HALLOWEEN;
+}
 
 /* ---- the book's spine, tooled ----
  *
@@ -13271,7 +13287,8 @@ static void shelf_base_ensure(struct room_render *rr)
 		gen = a->generation;
 		desk_apps_release(a);
 	}
-	if (!g_shelf_base || g_shelf_base_room != rr->serial || g_shelf_base_gen != gen) {
+	if (!g_shelf_base || g_shelf_base_room != rr->serial || g_shelf_base_gen != gen
+		|| g_shelf_base_decor != g_shelf_decor) {
 		if (g_shelf_base) {
 			cairo_surface_destroy(g_shelf_base);
 		}
@@ -13280,8 +13297,12 @@ static void shelf_base_ensure(struct room_render *rr)
 		shelf_base_paint(bc, rr);
 		cairo_destroy(bc);
 		cairo_surface_flush(g_shelf_base);
+		if (g_shelf_decor & DESK_DECOR_HALLOWEEN) {
+			shelf_fall_paint(rr, g_shelf_base);
+		}
 		g_shelf_base_room = rr->serial;
 		g_shelf_base_gen = gen;
+		g_shelf_base_decor = g_shelf_decor;
 		shelf_cuts_drop();
 	}
 }
@@ -30990,14 +31011,16 @@ struct lk_rig {
  * front door, and all of it is in the scene: traced like the rest, lit by
  * the same lamps and sun, throwing its shadows on the door and the wall.
  * A wreath round the name board -- fir with berries and cones and a red bow
- * at Christmas, tinsel and baubles for the New Year's party -- lights in a
- * garland up the casing, a bunch of balloons. Each is a group of distances in a box of
+ * at Christmas, tinsel and baubles for the New Year's party, the leaves of
+ * the fall and a jack-o'-lantern at Halloween -- lights in a garland up the
+ * casing, a bunch of balloons. Each is a group of distances in a box of
  * its own, marched only where a ray is inside the box; the wreath's is in
  * the door's frame, so it swings in with the door. */
 enum { LKD_WREATH = 0, LKD_GARLAND, LKD_BALLOONS };
-enum { LKD_FIR = 1, LKD_TINSEL };   /* the wreath it is */
+enum { LKD_FIR = 1, LKD_TINSEL, LKD_AUTUMN };   /* the wreath it is */
 enum {
 	DM_NEEDLE = 0, DM_BERRY, DM_CONE, DM_BOW, DM_BULB, DM_TINSEL, DM_BAUBLE, DM_BALLOON,
+	DM_LEAF, DM_VINE, DM_PUMPKIN, DM_STEM, DM_GLOW, DM_FLESH,
 };
 
 struct lkd_group {
@@ -31483,6 +31506,14 @@ static double lkd_ring(vec3 q, double *a, double *b)
 	return sqrt(c * c + z * z);
 }
 
+/* the same distance, when where on it is not wanted (no atan2s) */
+static double lkd_ring_r(vec3 q)
+{
+	double x = q.x - LKD_CX, y = q.y - LKD_CY, z = q.z - LKD_Z;
+	double c = sqrt(x * x + y * y) - LKD_R;
+	return sqrt(c * c + z * z);
+}
+
 static vec3 lkd_ring_at(double a, double b, double r)
 {
 	double rr = LKD_R + r * cos(b);
@@ -31573,6 +31604,29 @@ static double lkd_bow(vec3 q, int *mat)
 	return d;
 }
 
+/* a cone tucked in at ak round the ring, lying along it, r out from the
+ * middle of the ring's tube */
+static double lkd_cone(vec3 q, double ak, double r)
+{
+	vec3 c = lkd_ring_at(ak, 0.75, r);
+	vec3 u = vsub(q, c);
+	double along = -u.x * sin(ak) + u.y * cos(ak), across = u.x * cos(ak) + u.y * sin(ak);
+	return lkd_ellipsoid(v3(along, across, u.z), v3(0.031, 0.020, 0.018));
+}
+
+/* berries, three to a sprig, at ak round the ring: b round its tube, r out */
+static double lkd_berries(vec3 q, double ak, double b, double r)
+{
+	vec3 c = lkd_ring_at(ak, b, r);
+	static const double O[3][3] = { { 0.0, 0.012, 0.003 }, { -0.011, -0.006, 0.0 },
+		{ 0.011, -0.007, 0.002 } };
+	double d = 1e9;
+	for (int i = 0; i < 3; i++) {
+		d = fmin(d, vlen(vsub(q, vadd(c, v3(O[i][0], O[i][1], O[i][2])))) - 0.0115);
+	}
+	return d;
+}
+
 /* the wreath, in the door's frame */
 static double lkd_wreath(int kind, vec3 q, int *mat)
 {
@@ -31597,26 +31651,16 @@ static double lkd_wreath(int kind, vec3 q, int *mat)
 				*mat = DM_BAUBLE;
 			}
 		} else if (k % 3 == 1) {
-			/* a cone, along the ring */
-			vec3 c = lkd_ring_at(ak, 0.75, 0.050);
-			vec3 u = vsub(q, c);
-			double along = -u.x * sin(ak) + u.y * cos(ak), across = u.x * cos(ak) + u.y * sin(ak);
-			e = lkd_ellipsoid(v3(along, across, u.z), v3(0.031, 0.020, 0.018));
+			e = lkd_cone(q, ak, 0.050);
 			if (e < d) {
 				d = e;
 				*mat = DM_CONE;
 			}
 		} else {
-			/* berries, three to a sprig */
-			vec3 c = lkd_ring_at(ak, 1.05, 0.052);
-			static const double O[3][3] = { { 0.0, 0.012, 0.003 }, { -0.011, -0.006, 0.0 },
-				{ 0.011, -0.007, 0.002 } };
-			for (int i = 0; i < 3; i++) {
-				e = vlen(vsub(q, vadd(c, v3(O[i][0], O[i][1], O[i][2])))) - 0.0115;
-				if (e < d) {
-					d = e;
-					*mat = DM_BERRY;
-				}
+			e = lkd_berries(q, ak, 1.05, 0.052);
+			if (e < d) {
+				d = e;
+				*mat = DM_BERRY;
 			}
 		}
 	}
@@ -31673,21 +31717,9 @@ static vec3 lkd_bulb_at(int run, int k)
 	return v3(x + side * 0.021, s, LKG_Z + 0.024);
 }
 
-static double lkd_garland(vec3 p, int *mat, int *bulb)
+/* the lights wound in a garland near s along run, against d */
+static double lkd_lights(vec3 p, int run, double s, double d, int *mat, int *bulb)
 {
-	int run;
-	double s;
-	vec3 off;
-	lkd_run(p, &run, &s, &off);
-	double r = vlen(off);
-	if (r > 0.12) {
-		*mat = DM_NEEDLE;
-		*bulb = -1;
-		return r - 0.06;
-	}
-	double d = r - (0.020 + 0.026 * lkd_fir_for(p));
-	*mat = DM_NEEDLE;
-	*bulb = -1;
 	int k = (int)lround((s - 0.05) / LKG_PITCH);
 	for (int j = k - 1; j <= k + 1; j++) {
 		if (j < 0) {
@@ -31704,6 +31736,24 @@ static double lkd_garland(vec3 p, int *mat, int *bulb)
 		}
 	}
 	return d;
+}
+
+static double lkd_garland(vec3 p, int *mat, int *bulb)
+{
+	int run;
+	double s;
+	vec3 off;
+	lkd_run(p, &run, &s, &off);
+	double r = vlen(off);
+	if (r > 0.12) {
+		*mat = DM_NEEDLE;
+		*bulb = -1;
+		return r - 0.06;
+	}
+	double d = r - (0.020 + 0.026 * lkd_fir_for(p));
+	*mat = DM_NEEDLE;
+	*bulb = -1;
+	return lkd_lights(p, run, s, d, mat, bulb);
 }
 
 /* The balloons, a bunch of them tied below the lantern, floating up past
@@ -31761,16 +31811,507 @@ static double lkd_balloons(vec3 p, int *mat, int *which)
 	return d;
 }
 
+/* ---- Halloween: the leaves of the fall, little pumpkins, a jack-o'-lantern ----
+ *
+ * The wreath is leaves on a ring of grapevine -- maples and plainer ones,
+ * crimson to gold to brown -- with little pumpkins, cones and bittersweet
+ * tucked in it, and where the bow would be, a jack-o'-lantern with a light
+ * in it. The garland up the casing is the same leaves on a vine, with
+ * orange and purple lights in it. Each leaf is one: thin, folded down its
+ * middle, its tip curled; where they all are is in a table, made once, and
+ * only the few near a point are asked how far it is to them. */
+enum { LKL_MAPLE = 0, LKL_PLAIN };
+struct lkd_leaf {
+	vec3 c;             /* where it grows from */
+	vec3 u, v, w;       /* along it to its tip, across it, out of its face */
+	vec3 m;             /* the middle of a sphere round all of it */
+	double mr;          /* and how big that is */
+	double r;           /* a maple: its point to its tip; a plain one: half its length */
+	double fold, curl, bow;
+	int kind, col;
+};
+
+#define LKA_N 64            /* the wreath's leaves, round it */
+#define LKA_ROWS 5          /* and round the vine, from just behind straight out */
+#define LKA_B0 (-0.45)      /* round to the inside */
+#define LKA_DB 0.90
+#define LKA_VINE 0.022      /* the grapevine: how thick, from its middle */
+#define LKV_PITCH 0.036     /* the garland's leaves, along it */
+#define LKV_ROWS 4
+#define LKV_P0 (-1.35)      /* round it, from one side over the front to the other */
+#define LKV_DP 0.90
+#define LKV_N0 60           /* up a side: LKG_TOP / LKV_PITCH, and one */
+#define LKV_N1 30           /* along the head: 2 LKG_X / LKV_PITCH, and one */
+#define LKV_VINE 0.011
+#define LKJ_RX 0.060        /* the jack-o'-lantern: across, */
+#define LKJ_RY 0.049        /* high, */
+#define LKJ_RIBS 10
+#define LKJ_SHELL 0.0065    /* and how thick its wall is */
+
+static struct lkd_leaf g_lka[LKA_N * LKA_ROWS];
+static struct lkd_leaf g_lkv[(2 * LKV_N0 + LKV_N1) * LKV_ROWS];
+/* the pumpkins -- 0 the jack-o'-lantern, then the little ones in the
+ * wreath -- where, their own across, up (the stalk) and out, and size */
+static struct lkd_pumpkin {
+	vec3 c, x, y, z;
+	double rx, ry;
+	int ribs;
+} g_lkp[4];
+static pthread_once_t g_lkd_fall_once = PTHREAD_ONCE_INIT;
+
+static double lkd_rnd(int id, int salt)
+{
+	return room_seed(id, 0x4c0 + salt);
+}
+
+/* a leaf growing out of something at c: t the way the leaves on it go, n
+ * out of it; size, how big they are on it */
+static void lkd_leaf_put(struct lkd_leaf *l, int id, vec3 c, vec3 t, vec3 n, double size)
+{
+	vec3 b = vcross(n, t);
+	double turn = (lkd_rnd(id, 1) - 0.5) * 0.70, lift = 0.28 + 0.30 * lkd_rnd(id, 2);
+	vec3 u0 = vadd(vmul(t, cos(turn)), vmul(b, sin(turn)));
+	l->c = c;
+	l->u = vadd(vmul(u0, cos(lift)), vmul(n, sin(lift)));
+	l->w = vsub(vmul(n, cos(lift)), vmul(u0, sin(lift)));
+	l->v = vcross(l->w, l->u);
+	bool maple = lkd_rnd(id, 3) < 0.70;
+	l->kind = maple ? LKL_MAPLE : LKL_PLAIN;
+	l->r = size * (maple ? 0.036 + 0.012 * lkd_rnd(id, 4) : 0.028 + 0.010 * lkd_rnd(id, 4));
+	l->fold = 0.08 + 0.22 * lkd_rnd(id, 5);
+	l->curl = -0.12 + 0.30 * lkd_rnd(id, 6);
+	l->bow = (lkd_rnd(id, 7) - 0.5) * 0.30;
+	/* the maples crimson to gold, the others gold to brown */
+	double h = lkd_rnd(id, 8);
+	l->col = maple ? (h < 0.22 ? 0 : h < 0.48 ? 1 : h < 0.74 ? 2 : h < 0.90 ? 3 : 4)
+		: (h < 0.30 ? 4 : h < 0.55 ? 3 : h < 0.80 ? 5 : 2);
+	l->m = vadd(c, vmul(l->u, maple ? 0.40 * l->r : l->r));
+	l->mr = (maple ? 0.84 : 1.04) * l->r + 0.002;
+}
+
+/* a pumpkin at c, its stalk up, turned to look out */
+static void lkd_pumpkin_put(struct lkd_pumpkin *pk, vec3 c, vec3 up, vec3 out, double rx,
+	double ry, int ribs)
+{
+	pk->c = c;
+	pk->y = vnorm(up);
+	pk->x = vnorm(vcross(pk->y, out));
+	pk->z = vcross(pk->x, pk->y);
+	pk->rx = rx;
+	pk->ry = ry;
+	pk->ribs = ribs;
+}
+
+static void lkd_fall_make(void)
+{
+	/* round the wreath, flowing round it anticlockwise */
+	for (int i = 0; i < LKA_N; i++) {
+		for (int j = 0; j < LKA_ROWS; j++) {
+			int id = i * LKA_ROWS + j;
+			double a = (i + 0.5 + 0.36 * (lkd_rnd(id, 10) - 0.5)) * (2.0 * M_PI / LKA_N);
+			double b = LKA_B0
+				+ (j + ((i & 1) ? 0.5 : 0.0) + 0.30 * (lkd_rnd(id, 11) - 0.5)) * LKA_DB;
+			vec3 n = v3(cos(b) * cos(a), cos(b) * sin(a), sin(b));
+			lkd_leaf_put(&g_lka[id], id, lkd_ring_at(a, b, LKA_VINE - 0.005),
+				v3(-sin(a), cos(a), 0.0), n, 1.0);
+		}
+	}
+	/* up each side of the casing, hanging down it */
+	for (int side = 0; side < 2; side++) {
+		for (int i = 0; i < LKV_N0; i++) {
+			for (int j = 0; j < LKV_ROWS; j++) {
+				int k = (side * LKV_N0 + i) * LKV_ROWS + j, id = 1000 + k;
+				double s = (i + 0.5 + 0.36 * (lkd_rnd(id, 10) - 0.5)) * LKV_PITCH;
+				double ph = LKV_P0
+					+ (j + ((i & 1) ? 0.5 : 0.0) + 0.30 * (lkd_rnd(id, 11) - 0.5)) * LKV_DP;
+				vec3 n = v3(sin(ph), 0.0, cos(ph));
+				vec3 c = v3((side ? LKG_X : -LKG_X) + n.x * (LKV_VINE - 0.004), s,
+					LKG_Z + n.z * (LKV_VINE - 0.004));
+				lkd_leaf_put(&g_lkv[k], id, c, v3(0.0, -1.0, 0.0), n, 0.80);
+			}
+		}
+	}
+	/* and along the head, from its middle out to each end */
+	for (int i = 0; i < LKV_N1; i++) {
+		for (int j = 0; j < LKV_ROWS; j++) {
+			int k = (2 * LKV_N0 + i) * LKV_ROWS + j, id = 1000 + k;
+			double x = -LKG_X + (i + 0.5 + 0.36 * (lkd_rnd(id, 10) - 0.5)) * LKV_PITCH;
+			double ph = LKV_P0
+				+ (j + ((i & 1) ? 0.5 : 0.0) + 0.30 * (lkd_rnd(id, 11) - 0.5)) * LKV_DP;
+			vec3 n = v3(0.0, sin(ph), cos(ph));
+			vec3 c = v3(x, LKG_TOP + n.y * (LKV_VINE - 0.004), LKG_Z + n.z * (LKV_VINE - 0.004));
+			lkd_leaf_put(&g_lkv[k], id, c, v3(x < 0.0 ? -1.0 : 1.0, 0.0, 0.0), n, 0.80);
+		}
+	}
+	/* the jack-o'-lantern where the bow would be, looking a little up and
+	 * round toward the step; little pumpkins in every fourth slot */
+	lkd_pumpkin_put(&g_lkp[0], vadd(lkd_ring_at(LKD_KNOT_A, 0.85, 0.050), v3(0.0, 0.0, 0.016)),
+		v3(-0.08, 0.995, -0.10), v3(sin(0.22), 0.0, cos(0.22)), LKJ_RX, LKJ_RY, LKJ_RIBS);
+	static const double SIZE[3][2] = { { 0.026, 0.021 }, { 0.024, 0.020 }, { 0.028, 0.022 } };
+	for (int i = 0; i < 3; i++) {
+		double step = 2.0 * M_PI / (LKD_SLOTS + 1), ak = LKD_KNOT_A + (4 * i + 2) * step;
+		vec3 up = v3(cos(ak) * 0.45, 0.55 + 0.30 * sin(ak), 0.70);
+		lkd_pumpkin_put(&g_lkp[1 + i], lkd_ring_at(ak, 0.85, 0.052), up, v3(0.0, 0.0, 1.0),
+			SIZE[i][0], SIZE[i][1], 8);
+	}
+}
+
+/* atan2, near enough for a leaf's edge or a pumpkin's ribs (to 1e-5) and
+ * a good deal quicker: there are a lot of them */
+static double lkd_atan2(double y, double x)
+{
+	double ax = fabs(x), ay = fabs(y), mx = fmax(ax, ay);
+	double a = mx > 0.0 ? fmin(ax, ay) / mx : 0.0, s = a * a;
+	double r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
+	r = ay > ax ? 0.5 * M_PI - r : r;
+	r = x < 0.0 ? M_PI - r : r;
+	return y < 0.0 ? -r : r;
+}
+
+static double lkd_len2(double x, double y)
+{
+	return sqrt(x * x + y * y);
+}
+
+/* lkd_ring with the quicker atan2s, for the autumn wreath: it is asked a
+ * great deal more, the leaves on it being thick */
+static double lkd_ring_quick(vec3 q, double *a, double *b)
+{
+	double x = q.x - LKD_CX, y = q.y - LKD_CY, z = q.z - LKD_Z;
+	double c = sqrt(x * x + y * y) - LKD_R;
+	*a = lkd_atan2(y, x);
+	*b = lkd_atan2(z, c);
+	return sqrt(c * c + z * z);
+}
+
+/* a maple leaf's edge: how far out it is from the leaf's point at th
+ * (radians round from its tip), its tip 1 -- five lobes, smaller toward
+ * the stalk, cut deep between, and teeth on them unless not */
+static double lkd_maple_edge(double th, bool teeth)
+{
+	const double S = 0.95;
+	double ph = fabs(th) / S;
+	double tri = 1.0 - 2.0 * fabs(ph - (int)(ph + 0.5));
+	double env = ph < 1.0 ? 1.0 - 0.12 * ph : ph < 2.0 ? 0.88 - 0.33 * (ph - 1.0)
+		: fmax(0.55 - 0.33 * (ph - 2.0), 0.12);
+	double e = env * (0.48 + 0.52 * tri * (1.2 - 0.2 * tri));
+	if (teeth) {
+		double g = ph * 4.0;
+		e *= 0.97 + 0.06 * tri * (1.0 - 2.0 * fabs(g - (int)(g + 0.5)));
+	}
+	return e;
+}
+
+/* a point in a leaf's own frame, the leaf's bend taken out of z (and out of
+ * y, for a plain one) */
+static vec3 lkd_leaf_local(const struct lkd_leaf *l, vec3 q)
+{
+	vec3 d = vsub(q, l->c);
+	double x = vdot(d, l->u), y = vdot(d, l->v), z = vdot(d, l->w), R = l->r;
+	double xr = x / R, yr = y / R;
+	if (l->kind == LKL_PLAIN) {
+		/* curved a little in its plane too */
+		double xx = x - R;
+		y -= l->bow * (R - xx * xx / R);
+		xr = xx / R;
+		yr = y / R;
+	}
+	return v3(x, y, z - R * (l->fold * yr * yr + l->curl * xr * xr));
+}
+
+/* a leaf's distance in its own plane: <0 inside its edge */
+static double lkd_leaf_edge(const struct lkd_leaf *l, double x, double y, bool teeth)
+{
+	double R = l->r;
+	if (l->kind == LKL_MAPLE) {
+		/* round from its point, so how fast the edge goes in and out round
+		 * it says how much nearer it may be than it looks */
+		double r = sqrt(x * x + y * y);
+		double k = (teeth ? 2.7 : 2.1) * R / fmax(r, 0.3 * R);
+		return (r - R * lkd_maple_edge(lkd_atan2(y, x), teeth)) / sqrt(1.0 + k * k);
+	}
+	/* pointed at both ends: two arcs (a vesica, Quilez), along x */
+	const double hw = 0.40;
+	double rv = 0.5 * R * (hw + 1.0 / hw), dv = rv - hw * R;
+	double px = fabs(y), py = fabs(x - R);
+	return 0.92 * ((py - R) * dv > px * R ? lkd_len2(px, py - R) : lkd_len2(px + dv, py) - rv);
+}
+
+/* a leaf's distance -- or, when it cannot be under best, its distance off
+ * its own plane, which is never more and says as much without the edge */
+static double lkd_leaf_sd(const struct lkd_leaf *l, vec3 q, double best)
+{
+	vec3 p = lkd_leaf_local(l, q);
+	double dz = 0.85 * (fabs(p.z) - 0.0006);
+	if (dz >= best) {
+		return dz;
+	}
+	double d2 = lkd_leaf_edge(l, p.x, p.y, !g_lkd_rough);
+	double ox = fmax(d2, 0.0), oz = fmax(dz, 0.0);
+	return fmin(fmax(d2, dz), 0.0) + sqrt(ox * ox + oz * oz);
+}
+
+/* the nearest of a few leaves to q, if any is nearer than best: those whose
+ * spheres are nearest first, until no sphere left could beat it */
+static double lkd_leaves_near(const struct lkd_leaf *tab, const int *ids, int n, vec3 q,
+	double best, int *which)
+{
+	double lb[16];
+	int order[16], m = 0;
+	for (int i = 0; i < n; i++) {
+		double b = vlen(vsub(q, tab[ids[i]].m)) - tab[ids[i]].mr;
+		if (b >= best) {
+			continue;
+		}
+		int k = m++;
+		for (; k > 0 && lb[k - 1] > b; k--) {
+			lb[k] = lb[k - 1];
+			order[k] = order[k - 1];
+		}
+		lb[k] = b;
+		order[k] = ids[i];
+	}
+	for (int k = 0; k < m && lb[k] < best; k++) {
+		double e = lkd_leaf_sd(&tab[order[k]], q, best);
+		if (e < best) {
+			best = e;
+			*which = order[k];
+		}
+	}
+	return best;
+}
+
+/* the wreath's leaves near q: a round the ring, b round the vine (from
+ * straight out, -pi/2..3pi/2). They point on round it, so the ones that
+ * reach a point grow from before it. */
+static double lkd_ring_leaves(vec3 q, double a, double b, double best, int *which)
+{
+	int ids[12], n = 0;
+	int c = (int)floor(a * (LKA_N / (2.0 * M_PI)));
+	for (int di = -2; di <= 1; di++) {
+		int i = ((c + di) % LKA_N + LKA_N) % LKA_N;
+		int jc = (int)lround((b - LKA_B0) / LKA_DB - ((i & 1) ? 0.5 : 0.0));
+		for (int j = jc - 1; j <= jc + 1; j++) {
+			if (j >= 0 && j < LKA_ROWS) {
+				ids[n++] = i * LKA_ROWS + j;
+			}
+		}
+	}
+	return lkd_leaves_near(g_lka, ids, n, q, best, which);
+}
+
+/* the garland's leaves near p on one run of it (0 left, 1 head, 2 right):
+ * down the sides they hang, along the head they point out to its ends, so
+ * the ones that reach a point grow from beyond it */
+static double lkd_vine_leaves(vec3 p, int run, double best, int *which)
+{
+	int nn = run == 1 ? LKV_N1 : LKV_N0, ids[16], n = 0;
+	int base = run == 0 ? 0 : run == 2 ? LKV_N0 * LKV_ROWS : 2 * LKV_N0 * LKV_ROWS;
+	int c = (int)floor((run == 1 ? p.x + LKG_X : p.y) / LKV_PITCH);
+	int lo = run == 1 && p.x >= 0.0 ? c - 2 : c - 1;
+	for (int i = lo; i <= lo + 3; i++) {
+		for (int j = 0; i >= 0 && i < nn && j < LKV_ROWS; j++) {
+			ids[n++] = base + i * LKV_ROWS + j;
+		}
+	}
+	return lkd_leaves_near(g_lkv, ids, n, p, best, which);
+}
+
+static double lkd_capsule(vec3 p, vec3 a, vec3 b, double ra, double rb)
+{
+	vec3 pa = vsub(p, a), ba = vsub(b, a);
+	double h = clampf(vdot(pa, ba) / vdot(ba, ba), 0.0, 1.0);
+	return vlen(vsub(pa, vmul(ba, h))) - (ra + (rb - ra) * h);
+}
+
+/* a point in a pumpkin's own frame */
+static vec3 lkd_pumpkin_local(const struct lkd_pumpkin *pk, vec3 q)
+{
+	vec3 d = vsub(q, pk->c);
+	return v3(vdot(d, pk->x), vdot(d, pk->y), vdot(d, pk->z));
+}
+
+/* its skin, about its middle: ribbed round, drawn in at the top where the
+ * stalk is and a little underneath */
+static double lkd_pumpkin_skin(vec3 p, double rx, double ry, int ribs)
+{
+	double g = 1.0 - fabs(sin(lkd_atan2(p.z, p.x) * ribs * 0.5));
+	double k = 1.0 - 0.085 * g * g * g;
+	double dimple = ry * (p.y > 0.0 ? 0.22 : 0.12) * exp(-(p.x * p.x + p.z * p.z) / (rx * rx) * 10.0);
+	vec3 pp = v3(p.x, p.y > 0.0 ? p.y + dimple : p.y - dimple, p.z);
+	return 0.8 * lkd_ellipsoid(pp, v3(rx * k, ry, rx * k));
+}
+
+static double lkd_stalk(vec3 p, double rx, double ry)
+{
+	return lkd_capsule(p, v3(0.0, ry * 0.70, 0.0), v3(rx * 0.10, ry * 0.70 + rx * 0.42, -rx * 0.04),
+		rx * 0.11, rx * 0.09);
+}
+
+static double lkd_pumpkin_sd(const struct lkd_pumpkin *pk, vec3 q, int *mat)
+{
+	vec3 p = lkd_pumpkin_local(pk, q);
+	double d = lkd_pumpkin_skin(p, pk->rx, pk->ry, pk->ribs);
+	double st = lkd_stalk(p, pk->rx, pk->ry);
+	*mat = st < d ? DM_STEM : DM_PUMPKIN;
+	return fmin(d, st);
+}
+
+/* a triangle's distance in its plane, <0 inside (Quilez): t its corners */
+static double lkd_tri2(double px, double py, const double t[6])
+{
+	double e0x = t[2] - t[0], e0y = t[3] - t[1], e1x = t[4] - t[2], e1y = t[5] - t[3];
+	double e2x = t[0] - t[4], e2y = t[1] - t[5];
+	double v0x = px - t[0], v0y = py - t[1], v1x = px - t[2], v1y = py - t[3];
+	double v2x = px - t[4], v2y = py - t[5];
+	double h0 = clampf((v0x * e0x + v0y * e0y) / (e0x * e0x + e0y * e0y), 0.0, 1.0);
+	double h1 = clampf((v1x * e1x + v1y * e1y) / (e1x * e1x + e1y * e1y), 0.0, 1.0);
+	double h2 = clampf((v2x * e2x + v2y * e2y) / (e2x * e2x + e2y * e2y), 0.0, 1.0);
+	double q0x = v0x - e0x * h0, q0y = v0y - e0y * h0, q1x = v1x - e1x * h1, q1y = v1y - e1y * h1;
+	double q2x = v2x - e2x * h2, q2y = v2y - e2y * h2;
+	double s = e0x * e2y - e0y * e2x > 0.0 ? 1.0 : -1.0;
+	double dd = fmin(fmin(q0x * q0x + q0y * q0y, q1x * q1x + q1y * q1y), q2x * q2x + q2y * q2y);
+	double in = fmin(fmin(s * (v0x * e0y - v0y * e0x), s * (v1x * e1y - v1y * e1x)),
+		s * (v2x * e2y - v2y * e2x));
+	return in > 0.0 ? -sqrt(dd) : sqrt(dd);
+}
+
+/* the face cut in the jack-o'-lantern, flat on (x across, y up, from its
+ * middle, metres): eyes, a nose, a grin with a tooth down and one up */
+static double lkd_face(double x, double y)
+{
+	static const double EYE[6] = { 0.0105, 0.0060, 0.0315, 0.0040, 0.0215, 0.0245 };
+	static const double NOSE[6] = { -0.0062, -0.0095, 0.0062, -0.0095, 0.0, 0.0010 };
+	double f = fmin(lkd_tri2(fabs(x), y, EYE), lkd_tri2(x, y, NOSE));
+	/* the grin: in a small circle and out of a big one, pointed at its ends */
+	double mouth = fmax(lkd_len2(x, y - 0.0070) - 0.0400, 0.2000 - lkd_len2(x, y - 0.1830));
+	double t1 = fmax(fabs(x + 0.0110) - 0.0050, -0.0235 - y);
+	double t2 = fmax(fabs(x - 0.0130) - 0.0050, y + 0.0215);
+	return fmin(f, fmax(mouth, -fmin(t1, t2)));
+}
+
+/* a jack-o'-lantern: a pumpkin hollowed out to a wall, the face cut
+ * through the front of it -- what is seen through is the inside, lit, and
+ * the cut edges of the wall. p in its own frame, metres. */
+static double lkd_jack_body(vec3 p, int *mat)
+{
+	double out = lkd_pumpkin_skin(p, LKJ_RX, LKJ_RY, LKJ_RIBS), in = -(out + LKJ_SHELL);
+	double d = fmax(out, in);
+	*mat = out >= in ? DM_PUMPKIN : DM_GLOW;
+	double cut = -fmax(lkd_face(p.x, p.y), -p.z);
+	if (cut > d) {
+		d = cut;
+		*mat = DM_FLESH;
+	}
+	double st = lkd_stalk(p, LKJ_RX, LKJ_RY);
+	if (st < d) {
+		d = st;
+		*mat = DM_STEM;
+	}
+	return d;
+}
+
+/* the door's, where the bow would be */
+static double lkd_jack(vec3 q, int *mat)
+{
+	return lkd_jack_body(lkd_pumpkin_local(&g_lkp[0], q), mat);
+}
+
+/* the autumn wreath, in the door's frame; part: which leaf or pumpkin */
+static double lkd_autumn(vec3 q, int *mat, int *part)
+{
+	double a, b;
+	double r = lkd_ring_quick(q, &a, &b), d;
+	*mat = DM_VINE;
+	*part = -1;
+	if (r > 0.13) {
+		/* far from the ring, as near as anything on it could be */
+		d = r - 0.095;
+	} else {
+		/* the grapevine, three strands wound round one another */
+		d = r - LKA_VINE * (g_lkd_rough ? 0.95 : 0.90 + 0.10 * sin(3.0 * b - 47.0 * a));
+		int which = -1;
+		double e = lkd_ring_leaves(q, a, b < -0.5 * M_PI ? b + 2.0 * M_PI : b, d, &which);
+		if (which >= 0) {
+			d = e;
+			*mat = DM_LEAF;
+			*part = which;
+		}
+		double ak;
+		int k = lkd_slot(a, &ak), m2;
+		if (k >= 0 && k % 4 == 1) {
+			e = lkd_pumpkin_sd(&g_lkp[1 + k / 4], q, &m2);
+			if (e < d) {
+				d = e;
+				*mat = m2;
+				*part = 1 + k / 4;
+			}
+		} else if (k >= 0 && k % 4 == 3) {
+			e = lkd_cone(q, ak, 0.054);
+			if (e < d) {
+				d = e;
+				*mat = DM_CONE;
+			}
+		} else if (k >= 0) {
+			/* bittersweet */
+			e = lkd_berries(q, ak, 1.0, 0.060);
+			if (e < d) {
+				d = e;
+				*mat = DM_BERRY;
+			}
+		}
+	}
+	double jr = vlen(vsub(q, g_lkp[0].c));
+	int jm = DM_PUMPKIN;
+	double e = jr > 0.12 ? jr - 0.092 : lkd_jack(q, &jm);
+	if (e < d) {
+		d = e;
+		*mat = jm;
+		*part = 0;
+	}
+	return d;
+}
+
+/* the leaves on a vine up the casing and over its head, the lights in it */
+static double lkd_vine(vec3 p, int *mat, int *part)
+{
+	int run;
+	double s;
+	vec3 off;
+	lkd_run(p, &run, &s, &off);
+	double r = vlen(off);
+	*mat = DM_VINE;
+	*part = -1;
+	if (r > 0.10) {
+		return r - 0.06;
+	}
+	double d = r - LKV_VINE;
+	int which = -1;
+	d = lkd_vine_leaves(p, run, d, &which);
+	/* round a top corner, the leaves of the run past it reach too */
+	if (run != 1 && p.y > LKG_TOP - 0.09) {
+		d = lkd_vine_leaves(p, 1, d, &which);
+	} else if (run == 1 && fabs(p.x) > LKG_X - 0.09) {
+		d = lkd_vine_leaves(p, p.x < 0.0 ? 0 : 2, d, &which);
+	}
+	if (which >= 0) {
+		*mat = DM_LEAF;
+		*part = which;
+	}
+	return lkd_lights(p, run, s, d, mat, part);
+}
+
 /* any group's distance, in its frame */
 static double lkd_sd(const struct lk_scene *sc, const struct lkd_group *g, vec3 q, int *mat,
 	int *part)
 {
 	*part = -1;
+	bool fall = sc->wreath == LKD_AUTUMN;
 	switch (g->kind) {
 	case LKD_WREATH:
-		return lkd_wreath(sc->wreath, q, mat);
+		return fall ? lkd_autumn(q, mat, part) : lkd_wreath(sc->wreath, q, mat);
 	case LKD_GARLAND:
-		return lkd_garland(q, mat, part);
+		return fall ? lkd_vine(q, mat, part) : lkd_garland(q, mat, part);
 	default:
 		return lkd_balloons(q, mat, part);
 	}
@@ -31782,11 +32323,13 @@ static double lkd_sd(const struct lk_scene *sc, const struct lkd_group *g, vec3 
  * the real one -- the needles, the ornaments -- asked for. */
 static double lkd_bound(const struct lk_scene *sc, const struct lkd_group *g, vec3 q)
 {
-	(void)sc;
 	switch (g->kind) {
 	case LKD_WREATH: {
-		double a, b;
-		double d = lkd_ring(q, &a, &b) - 0.080;
+		if (sc->wreath == LKD_AUTUMN) {
+			/* the pumpkins stand further out than the bow, the jack-o'-lantern most */
+			return fmin(lkd_ring_r(q) - 0.095, vlen(vsub(q, g_lkp[0].c)) - 0.092);
+		}
+		double d = lkd_ring_r(q) - 0.080;
 		vec3 c = vadd(lkd_ring_at(LKD_KNOT_A, 1.0, 0.040), v3(0.0, 0.0, 0.012));
 		return fmin(d, vlen(vsub(q, c)) - 0.13);
 	}
@@ -31855,6 +32398,7 @@ static void lkd_hit(const struct lk_scene *sc, bool door, vec3 o, vec3 d, struct
 {
 	for (int i = 0; i < sc->ndeco; i++) {
 		const struct lkd_group *g = &sc->deco[i];
+		bool fall = sc->wreath == LKD_AUTUMN && g->kind != LKD_BALLOONS;
 		double t, t1;
 		if (g->door != door || !lkd_slab(o, d, g->lo, g->hi, h->t, &t, &t1)) {
 			continue;
@@ -31879,7 +32423,8 @@ static void lkd_hit(const struct lk_scene *sc, bool door, vec3 o, vec3 d, struct
 				h->n = door ? lk_door_dir_out(sc, nn) : nn;
 				break;
 			}
-			t += fmax(dist * (sc->rough ? 0.62 : 0.48), 0.00008);
+			/* the leaves' distances are cautious already: longer strides */
+			t += fmax(dist * (fall ? (sc->rough ? 0.75 : 0.65) : (sc->rough ? 0.62 : 0.48)), 0.00008);
 		}
 		g_lkd_rough = false;
 	}
@@ -31979,16 +32524,21 @@ static void lkd_dress(struct lk_scene *sc)
 {
 	unsigned dc = sc->rig.decor;
 	sc->ndeco = 0;
-	sc->wreath = dc & DESK_DECOR_XMAS ? LKD_FIR : dc & DESK_DECOR_NEWYEAR ? LKD_TINSEL : 0;
+	sc->wreath = dc & DESK_DECOR_XMAS ? LKD_FIR : dc & DESK_DECOR_NEWYEAR ? LKD_TINSEL
+		: dc & DESK_DECOR_HALLOWEEN ? LKD_AUTUMN : 0;
+	bool fall = sc->wreath == LKD_AUTUMN;
+	if (fall) {
+		pthread_once(&g_lkd_fall_once, lkd_fall_make);
+	}
 	if (sc->wreath) {
 		struct lkd_group *g = &sc->deco[sc->ndeco++];
 		g->kind = LKD_WREATH;
 		g->door = true;
-		double R = LKD_R + 0.080;
+		double R = LKD_R + (fall ? 0.095 : 0.080);
 		g->lo = v3(LKD_CX - R, LKD_CY - R - 0.14, LK_DT);
-		g->hi = v3(LKD_CX + R, LKD_CY + R, LKD_Z + 0.115);
+		g->hi = v3(LKD_CX + R, LKD_CY + R, LKD_Z + (fall ? 0.15 : 0.115));
 	}
-	if (dc & DESK_DECOR_XMAS) {
+	if ((dc & DESK_DECOR_XMAS) || fall) {
 		struct lkd_group *g = &sc->deco[sc->ndeco++];
 		g->kind = LKD_GARLAND;
 		g->lo = v3(-LKG_X - 0.07, 0.0, 0.0);
@@ -32987,6 +33537,118 @@ static const vec3 LKB_COL[5] = {
 	{ 0.62, 0.025, 0.035 }, { 0.80, 0.50, 0.09 }, { 0.035, 0.16, 0.60 }, { 0.80, 0.21, 0.40 },
 	{ 0.80, 0.80, 0.82 },
 };
+/* Halloween's lights, orange and purple in turn */
+static const vec3 LKH_BULB_COL[2] = { { 1.00, 0.10, 0.00 }, { 0.20, 0.02, 1.00 } };
+/* the leaves of the fall: crimson, scarlet, orange, amber, gold, brown */
+static const vec3 LKL_COL[6] = {
+	{ 0.36, 0.024, 0.020 }, { 0.56, 0.060, 0.018 }, { 0.70, 0.18, 0.020 },
+	{ 0.68, 0.33, 0.032 }, { 0.60, 0.46, 0.065 }, { 0.20, 0.075, 0.024 },
+};
+/* the pumpkins: the jack-o'-lantern, then orange, a white one, a golden one */
+static const vec3 LKP_COL[4] = {
+	{ 0.78, 0.24, 0.018 }, { 0.72, 0.22, 0.016 }, { 0.70, 0.64, 0.48 }, { 0.78, 0.42, 0.030 },
+};
+/* what the light inside the jack-o'-lantern is */
+static const vec3 LKJ_LIGHT = { 1.00, 0.55, 0.14 };
+
+/* the colour of the light k along a run of the garland */
+static vec3 lkd_bulb_col(unsigned decor, int run, int k)
+{
+	if ((decor & DESK_DECOR_HALLOWEEN) && !(decor & DESK_DECOR_XMAS)) {
+		return LKH_BULB_COL[(k + run) & 1];
+	}
+	return LKD_BULB_COL[(k + run * 2) % LKG_N];
+}
+
+/* A pumpkin's skin: darker and greener down the grooves, streaked up the
+ * ribs, freckled; green still round the stalk. */
+static void lkd_pumpkin_paint(struct lk_mat *m, const struct lkd_pumpkin *pk, vec3 base, vec3 q)
+{
+	vec3 pp = lkd_pumpkin_local(pk, q);
+	double ang = lkd_atan2(pp.z, pp.x);
+	double groove = 1.0 - fabs(sin(ang * pk->ribs * 0.5));
+	groove *= groove;
+	vec3 col = vmix(base, vmul3(base, v3(0.62, 0.58, 0.36)), 0.65 * groove);
+	col = vmul(col, 0.86 + 0.24 * room_noise(ang * 30.0, pp.y / pk->ry * 8.0));
+	double crown = pp.y > 0.0 ? exp(-(pp.x * pp.x + pp.z * pp.z) / (pk->rx * pk->rx) * 6.0) : 0.0;
+	col = vmix(col, v3(0.20, 0.18, 0.05), 0.45 * crown);
+	col = vmix(col, vmul(col, 1.25), 0.6 * smoothstepf(0.78, 0.84, lkd_noise3(vmul(q, 620.0))));
+	m->albedo = col;
+	m->rough = 0.40;
+	m->coat = 0.28;
+	m->ao *= 1.0 - 0.30 * groove;
+}
+
+static void lkd_stem_paint(struct lk_mat *m, vec3 q)
+{
+	m->albedo = vmix(v3(0.11, 0.095, 0.045), v3(0.26, 0.21, 0.10), lkd_noise3(vmul(q, 900.0)));
+	m->rough = 0.72;
+}
+
+/* Inside a jack-o'-lantern (DM_GLOW), lit by the light standing on its
+ * floor; or the cut edge of its wall (DM_FLESH), lit through from inside. */
+static void lkd_jack_lit(struct lk_mat *m, const struct lkd_pumpkin *pk, vec3 q, int mat)
+{
+	vec3 pp = lkd_pumpkin_local(pk, q);
+	if (mat == DM_GLOW) {
+		double dl = vlen(vsub(pp, v3(0.0, -0.030, 0.0)));
+		m->emit = vmul(LKJ_LIGHT, 0.45 + 1.1 / (1.0 + dl * dl / (0.035 * 0.035)));
+		m->albedo = v3(0.05, 0.03, 0.01);
+		m->rough = 0.6;
+		return;
+	}
+	double depth = clampf(-lkd_pumpkin_skin(pp, LKJ_RX, LKJ_RY, LKJ_RIBS) / LKJ_SHELL, 0.0, 1.0);
+	m->albedo = v3(0.80, 0.56, 0.20);
+	m->emit = vmul(LKJ_LIGHT, 0.08 + 0.80 * depth * depth);
+	m->rough = 0.55;
+}
+
+/* A leaf, as shading: its colour blotched and greener toward the stalk,
+ * the veins paler, the edge dried brown and a dark spot here and there;
+ * the back of it paler and duller. */
+static void lkd_leaf_skin(struct lk_mat *m, const struct lkd_leaf *l, vec3 q)
+{
+	vec3 p = lkd_leaf_local(l, q);
+	double R = l->r, vein, edge, from;
+	if (l->kind == LKL_MAPLE) {
+		/* the veins from the point out along each lobe */
+		double r = sqrt(p.x * p.x + p.y * p.y), th = lkd_atan2(p.y, p.x);
+		double n = clampf(round(th / 0.95), -2.0, 2.0);
+		double off = r * sin(th - n * 0.95), w = 0.00045 + 0.00055 * (1.0 - clampf(r / R, 0.0, 1.0));
+		vein = cos(th - n * 0.95) > 0.0 ? exp(-off * off / (w * w)) : 0.0;
+		double e = R * lkd_maple_edge(th, true);
+		edge = clampf((e - r) / (0.15 * R), 0.0, 1.0);
+		from = clampf(r / fmax(e, 1e-4), 0.0, 1.0);
+	} else {
+		/* the midrib, and the veins off it each way toward the tip */
+		double xx = p.x - R, w = 0.0004 + 0.0005 * (1.0 - fabs(xx) / R);
+		double sv = (p.x - fabs(p.y) * 1.4) / (0.30 * R);
+		double sf = (sv - floor(sv + 0.5)) * 0.30 * R;
+		vein = fmax(exp(-p.y * p.y / (w * w)), 0.7 * exp(-sf * sf / (0.36 * w * w)));
+		double rv = 0.5 * R * (0.40 + 1.0 / 0.40), dv = rv - 0.40 * R;
+		double half = sqrt(fmax(rv * rv - xx * xx, 0.0)) - dv;
+		edge = clampf((half - fabs(p.y)) / (0.12 * R), 0.0, 1.0);
+		from = clampf(p.x / (2.0 * R), 0.0, 1.0);
+	}
+	vec3 col = LKL_COL[l->col];
+	double blot = lkd_noise3(vadd(vmul(q, 60.0), v3(1.3, 4.1, 2.7)));
+	col = vmul(col, 0.80 + 0.30 * blot + 0.10 * lkd_noise3(vmul(q, 210.0)));
+	if (l->col != 5) {
+		col = vmix(col, v3(0.42, 0.36, 0.05), 0.30 * (1.0 - from) * (1.0 - from));
+	}
+	col = vmix(col, vadd(vmul(col, 1.15), v3(0.06, 0.05, 0.01)), 0.55 * vein);
+	col = vmix(col, v3(0.12, 0.050, 0.020), 0.38 * (1.0 - edge));
+	double spot = lkd_noise3(vadd(vmul(q, 330.0), v3(7.7, 0.0, 3.3)));
+	col = vmix(col, v3(0.045, 0.028, 0.015), 0.70 * smoothstepf(0.86, 0.90, spot));
+	bool back = p.z < 0.0;
+	if (back) {
+		double luma = 0.3 * col.x + 0.6 * col.y + 0.1 * col.z;
+		col = vmul(vmix(col, v3(luma, luma, luma), 0.25), 1.15);
+	}
+	m->albedo = col;
+	m->rough = back ? 0.70 : 0.50;
+	m->coat = back ? 0.0 : 0.12;
+}
 
 /* Needles, as shading. Each sprig lays its needles its own way across the
  * surface; their rows tilt the normal this way and that, dark down in the
@@ -33052,7 +33714,8 @@ static void lkd_material(const struct lk_scene *sc, const struct lk_hit *h, vec3
 		}
 		break;
 	case DM_BERRY:
-		m->albedo = v3(0.60, 0.022, 0.032);
+		/* holly's red, or bittersweet's orange */
+		m->albedo = sc->wreath == LKD_AUTUMN ? v3(0.74, 0.20, 0.022) : v3(0.60, 0.022, 0.032);
 		m->rough = 0.10;
 		m->coat = 1.0;
 		break;
@@ -33075,13 +33738,13 @@ static void lkd_material(const struct lk_scene *sc, const struct lk_hit *h, vec3
 		}
 		break;
 	case DM_BULB: {
-		lkd_garland(q, &mat, &part);
+		lkd_sd(sc, g, q, &mat, &part);
 		int run = part < 0 ? 0 : part % 3, k = part < 0 ? 0 : part / 3;
-		vec3 col = LKD_BULB_COL[(k + run * 2) % LKG_N];
+		vec3 col = lkd_bulb_col(sc->rig.decor, run, k);
 		vec3 c = lkd_bulb_at(run, k);
 		if (q.z - c.z < -0.0045) {
-			/* its socket, in the green */
-			m->albedo = v3(0.020, 0.045, 0.020);
+			/* its socket, in the green -- or black, among the leaves */
+			m->albedo = sc->wreath == LKD_AUTUMN ? v3(0.012, 0.011, 0.010) : v3(0.020, 0.045, 0.020);
 			m->rough = 0.4;
 			break;
 		}
@@ -33106,6 +33769,35 @@ static void lkd_material(const struct lk_scene *sc, const struct lk_hit *h, vec3
 		m->rough = 0.06;
 		break;
 	}
+	case DM_LEAF: {
+		lkd_sd(sc, g, q, &mat, &part);
+		int n = g->kind == LKD_WREATH ? LKA_N * LKA_ROWS : (2 * LKV_N0 + LKV_N1) * LKV_ROWS;
+		if (part < 0 || part >= n) {
+			m->albedo = LKL_COL[2];
+			break;
+		}
+		lkd_leaf_skin(m, g->kind == LKD_WREATH ? &g_lka[part] : &g_lkv[part], q);
+		break;
+	}
+	case DM_VINE:
+		/* grapevine, grey-brown and stringy */
+		m->albedo = vmix(v3(0.050, 0.036, 0.026), v3(0.14, 0.10, 0.068),
+			lkd_noise3(vmul(q, 420.0)));
+		m->rough = 0.82;
+		break;
+	case DM_PUMPKIN: {
+		lkd_sd(sc, g, q, &mat, &part);
+		int i = part < 0 || part > 3 ? 0 : part;
+		lkd_pumpkin_paint(m, &g_lkp[i], LKP_COL[i], q);
+		break;
+	}
+	case DM_STEM:
+		lkd_stem_paint(m, q);
+		break;
+	case DM_GLOW:
+	case DM_FLESH:
+		lkd_jack_lit(m, &g_lkp[0], q, h->sub);
+		break;
 	case DM_BALLOON: {
 		lkd_balloons(q, &mat, &part);
 		int i = part < 0 ? 0 : part;
@@ -33125,6 +33817,493 @@ static void lkd_material(const struct lk_scene *sc, const struct lk_hit *h, vec3
 		m->albedo = v3(0.3, 0.3, 0.3);
 		break;
 	}
+}
+
+/* ---- Halloween on the bookcase ----
+ *
+ * On the day, the lower board of the bookcase has a jack-o'-lantern on it
+ * too, right of the clock, with two little pumpkins and a few leaves come
+ * down. They are not in the bake -- a room is traced once and kept, and
+ * tracing it again for a day would be a long wait at a login -- but traced
+ * onto the picture of the case once it is painted (shelf_base_ensure),
+ * through the case's own camera, under the room's own lights: the lamp on
+ * the desk, the pair under the upper board, the light all round. Where
+ * they stand the board is the bake's, with what they do to it worked out
+ * against what it had: their shadows, how they shut it in, and the light
+ * out of the face. In metres, from the board's front edge: x across from
+ * the middle of the case, y up off the board, z out. */
+static struct {
+	struct lkd_pumpkin pk[3];   /* the jack-o'-lantern, then two little ones */
+	struct lkd_leaf leaf[3];
+	vec3 bc[6];                 /* a sphere round each of them */
+	double br[6];
+} g_shf;
+static const vec3 SHF_COL[3] = { { 0.78, 0.24, 0.018 }, { 0.75, 0.30, 0.020 }, { 0.70, 0.64, 0.48 } };
+#define SHF_X0 0.278        /* where they make a difference: from right of the clock */
+#define SHF_X1 0.640
+#define SHF_Z0 (-0.270)     /* what stands there, from short of the back */
+#define SHF_TOP 0.130       /* up to the jack-o'-lantern's stalk */
+#define SHF_BACK ((RM_SH_BACKT - RM_SH_D) * LK_RM_UNIT)   /* the case's back, inside */
+#define SHF_UP 0.200        /* as high up it as their shadows go */
+
+static vec3 shf_from_room(vec3 p)
+{
+	return v3(p.x * LK_RM_UNIT, (p.y - RM_SH_BAY_B) * LK_RM_UNIT, (p.z - RM_SH_ZF) * LK_RM_UNIT);
+}
+
+static vec3 shf_to_room(vec3 q)
+{
+	return v3(q.x / LK_RM_UNIT, q.y / LK_RM_UNIT + RM_SH_BAY_B, q.z / LK_RM_UNIT + RM_SH_ZF);
+}
+
+/* the jack-o'-lantern looking round toward the eye, and a little up */
+static void shf_make(const struct room_cam *cam)
+{
+	vec3 c = v3(0.392, LKJ_RY * 0.97, -0.100);
+	vec3 h = vsub(shf_from_room(cam->eye), c);
+	h.y = 0.0;
+	h = vnorm(h);
+	lkd_pumpkin_put(&g_shf.pk[0], c, vsub(v3(0.0, 1.0, 0.0), vmul(h, 0.22)), h, LKJ_RX, LKJ_RY,
+		LKJ_RIBS);
+	lkd_pumpkin_put(&g_shf.pk[1], v3(0.497, 0.031 * 0.97, -0.052), v3(0.08, 1.0, 0.05),
+		v3(0.0, 0.0, 1.0), 0.040, 0.031, 8);
+	lkd_pumpkin_put(&g_shf.pk[2], v3(0.322, 0.028 * 0.97, -0.050), v3(-0.06, 1.0, 0.03),
+		v3(0.0, 0.0, 1.0), 0.035, 0.028, 8);
+	/* fallen, curled up a little at the edges and the tip */
+	static const struct { double x, z, a, r, fold, curl; int kind, col; } L[3] = {
+		{ 0.448, -0.024, 2.6, 0.040, 0.18, 0.22, LKL_MAPLE, 1 },
+		{ 0.358, -0.010, -0.5, 0.036, 0.12, 0.30, LKL_MAPLE, 3 },
+		{ 0.300, -0.185, 0.4, 0.030, 0.10, 0.20, LKL_PLAIN, 4 },
+	};
+	for (int i = 0; i < 3; i++) {
+		struct lkd_leaf *l = &g_shf.leaf[i];
+		bool maple = L[i].kind == LKL_MAPLE;
+		l->c = v3(L[i].x, 0.0012, L[i].z);
+		l->u = v3(cos(L[i].a), 0.0, sin(L[i].a));
+		l->w = v3(0.0, 1.0, 0.0);
+		l->v = vcross(l->w, l->u);
+		l->r = L[i].r;
+		l->fold = L[i].fold;
+		l->curl = L[i].curl;
+		l->bow = 0.08;
+		l->kind = L[i].kind;
+		l->col = L[i].col;
+		l->m = vadd(l->c, vmul(l->u, maple ? 0.40 * l->r : l->r));
+		l->mr = (maple ? 0.84 : 1.04) * l->r + 0.002;
+		g_shf.bc[3 + i] = l->m;
+		g_shf.br[3 + i] = l->mr;
+	}
+	for (int i = 0; i < 3; i++) {
+		g_shf.bc[i] = g_shf.pk[i].c;
+		g_shf.br[i] = g_shf.pk[i].rx * 1.45;
+	}
+}
+
+/* whether the way from p toward l (as far as dist) passes within reach of
+ * any of them */
+static bool shf_near_way(vec3 p, vec3 l, double dist, double reach)
+{
+	for (int i = 0; i < 6; i++) {
+		vec3 w = vsub(g_shf.bc[i], p);
+		double s = clampf(vdot(w, l), 0.0, dist);
+		vec3 off = vsub(w, vmul(l, s));
+		if (vdot(off, off) < lk_sq(g_shf.br[i] + reach)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/* for a shadow, or how shut in something is: the pumpkins as plain
+ * shapes, the leaves without their teeth (set by whoever asks, on its own
+ * thread) */
+static _Thread_local bool g_shf_rough;
+
+/* what is on the board, and which: part 0..2 the pumpkins, 3..5 the leaves */
+static double shf_sd(vec3 q, int *mat, int *part)
+{
+	double d = 1e9;
+	*mat = DM_PUMPKIN;
+	*part = 0;
+	for (int i = 0; i < 3; i++) {
+		const struct lkd_pumpkin *pk = &g_shf.pk[i];
+		double far = vlen(vsub(q, pk->c)) - pk->rx * 1.45;
+		int m = DM_PUMPKIN;
+		double e = far > 0.02 ? far
+			: g_shf_rough ? lkd_ellipsoid(lkd_pumpkin_local(pk, q), v3(pk->rx, pk->ry, pk->rx))
+			: i == 0 ? lkd_jack_body(lkd_pumpkin_local(pk, q), &m) : lkd_pumpkin_sd(pk, q, &m);
+		if (e < d) {
+			d = e;
+			*mat = m;
+			*part = i;
+		}
+	}
+	for (int i = 0; i < 3; i++) {
+		const struct lkd_leaf *l = &g_shf.leaf[i];
+		if (vlen(vsub(q, l->m)) - l->mr < d) {
+			double e = lkd_leaf_sd(l, q, d);
+			if (e < d) {
+				d = e;
+				*mat = DM_LEAF;
+				*part = 3 + i;
+			}
+		}
+	}
+	return d;
+}
+
+static vec3 shf_normal(vec3 q)
+{
+	const double e = 0.00025;
+	int m, pt;
+	vec3 k1 = v3(1, -1, -1), k2 = v3(-1, -1, 1), k3 = v3(-1, 1, -1), k4 = v3(1, 1, 1);
+	return vnorm(vadd(vadd(vmul(k1, shf_sd(vadd(q, vmul(k1, e)), &m, &pt)),
+		vmul(k2, shf_sd(vadd(q, vmul(k2, e)), &m, &pt))),
+		vadd(vmul(k3, shf_sd(vadd(q, vmul(k3, e)), &m, &pt)),
+		vmul(k4, shf_sd(vadd(q, vmul(k4, e)), &m, &pt)))));
+}
+
+/* how much of a light toward l (as far as dist) they let through to p, softly */
+static double shf_soft(vec3 p, vec3 l, double dist, double k)
+{
+	double t0, t1;
+	/* nothing near the way, or so far along it the penumbra cannot reach */
+	if (!shf_near_way(p, l, dist, fmin(dist / k, 0.03)) || !lkd_slab(p, l, v3(SHF_X0 - 0.02, 0.0, SHF_Z0 - 0.02), v3(SHF_X1 + 0.02, SHF_TOP + 0.01, 0.02),
+			dist, &t0, &t1)) {
+		return 1.0;
+	}
+	double res = 1.0, t = fmax(t0, 0.002);
+	g_shf_rough = g_lkd_rough = true;
+	for (int n = 0; n < 48 && t < t1; n++) {
+		int m, pt;
+		double h = shf_sd(vadd(p, vmul(l, t)), &m, &pt);
+		if (h < 0.0002) {
+			res = 0.0;
+			break;
+		}
+		res = fmin(res, k * h / t);
+		t += clampf(h, 0.0015, 0.04);
+	}
+	g_shf_rough = g_lkd_rough = false;
+	res = clampf(res, 0.0, 1.0);
+	return res * res * (3.0 - 2.0 * res);
+}
+
+/* how shut in p is, by them and the board under them */
+static double shf_ao(vec3 p, vec3 n)
+{
+	static const double D[4] = { 0.006, 0.016, 0.032, 0.060 };
+	static const double W[4] = { 0.30, 0.26, 0.22, 0.16 };
+	/* none of them in reach: open (the board never shuts in the board) */
+	bool near = false;
+	for (int i = 0; i < 6 && !near; i++) {
+		near = vlen(vsub(p, g_shf.bc[i])) - g_shf.br[i] < 0.065;
+	}
+	if (!near) {
+		return 1.0;
+	}
+	double occ = 0.0;
+	g_shf_rough = g_lkd_rough = true;
+	for (int j = 0; j < 4; j++) {
+		int m, pt;
+		vec3 q = vadd(p, vmul(n, D[j]));
+		double h = fmin(shf_sd(q, &m, &pt), fmax(q.y, 0.0) + 0.02);
+		occ += clampf((D[j] - h) / D[j], 0.0, 1.0) * W[j];
+	}
+	g_shf_rough = g_lkd_rough = false;
+	return 1.0 - clampf(occ, 0.0, 1.0) * 0.80;
+}
+
+static bool shf_trace(vec3 o, vec3 d, double tmax, double *th, int *mat, int *part)
+{
+	/* only between the first sphere round one of them it goes into and the
+	 * last it comes out of, if it goes into any */
+	double t = 1e9, t1 = -1.0;
+	for (int i = 0; i < 6; i++) {
+		vec3 w = vsub(g_shf.bc[i], o);
+		double s = vdot(w, d), h2 = vdot(w, w) - s * s, r2 = g_shf.br[i] * g_shf.br[i];
+		if (h2 < r2) {
+			double half = sqrt(r2 - h2);
+			t = fmin(t, s - half);
+			t1 = fmax(t1, s + half);
+		}
+	}
+	t = fmax(t, 0.0);
+	t1 = fmin(t1, tmax);
+	for (int n = 0; n < 200 && t < t1; n++) {
+		double e = shf_sd(vadd(o, vmul(d, t)), mat, part);
+		if (e < 0.00012) {
+			*th = t;
+			return true;
+		}
+		t += fmax(e * 0.85, 0.00008);
+	}
+	return false;
+}
+
+/* one of them, as the room's lights have it (shade_surface, but for the
+ * room's own shadows and how it shuts things in, which the bake has and
+ * these are clear of) */
+static vec3 shf_shade(vec3 q, vec3 d, int mat, int part)
+{
+	struct lk_mat m;
+	memset(&m, 0, sizeof m);
+	m.ao = 1.0;
+	m.n = shf_normal(q);
+	if (part >= 3) {
+		lkd_leaf_skin(&m, &g_shf.leaf[part - 3], q);
+	} else if (mat == DM_GLOW || mat == DM_FLESH) {
+		lkd_jack_lit(&m, &g_shf.pk[0], q, mat);
+	} else if (mat == DM_STEM) {
+		lkd_stem_paint(&m, q);
+	} else {
+		lkd_pumpkin_paint(&m, &g_shf.pk[part], SHF_COL[part], q);
+	}
+	vec3 pu = shf_to_room(q), v = vmul(d, -1.0), n = m.n;
+	struct key_light kl = key_at(pu, ROOM_KIND);
+	double nol = fmax(vdot(n, kl.dir), 0.0), nov = fmax(vdot(n, v), 1e-4);
+	double ao = m.ao * shf_ao(q, n);
+	double sh = nol > 0.0 ? shf_soft(vadd(q, vmul(n, 0.0008)), kl.dir, 0.5, 1.0 / fmax(kl.ang, 0.02))
+		: 0.0;
+	vec3 diff = vmul(m.albedo, 1.0 - m.metal);
+	vec3 col = vmul(vmul3(diff, vmul(LIT_KEY_COL, kl.irr)), nol * sh / M_PI);
+	col = vadd(col, vmul(vmul3(diff, sh_irradiance(n)), ao / M_PI));
+	col = vadd(col, vmul(vmul3(diff, shelf_lamp_at(pu, n)), ao / M_PI));
+	double ea, eb;
+	env_brdf(nov, m.rough, &ea, &eb);
+	vec3 f0 = vmix(v3(0.04, 0.04, 0.04), m.albedo, m.metal);
+	vec3 r = reflect3(d, n);
+	vec3 refl = vadd(env_prefiltered(r, m.rough), vmul(env_lamp(r, m.rough, &kl), sh));
+	col = vadd(col, vmul(vmul3(refl, vadd(vmul(f0, ea), v3(eb, eb, eb))), ao));
+	if (m.coat > 0.0) {
+		double fr = 0.04 + 0.96 * pow(1.0 - nov, 5.0), ca, cb;
+		col = vmul(col, 1.0 - fr * m.coat);
+		env_brdf(nov, 0.10, &ca, &cb);
+		vec3 cr = vadd(env_prefiltered(r, 0.10), vmul(env_lamp(r, 0.10, &kl), sh));
+		col = vadd(col, vmul(cr, (0.04 * ca + cb) * m.coat * ao));
+	}
+	/* lit as bright as it is at the door, whose exposure is not the room's */
+	col = vadd(col, vmul(m.emit, LK_EXPOSURE / ICON_EXPOSURE));
+	return tonemap(vmul(col, ICON_EXPOSURE));
+}
+
+/* What they do to the case at b, facing n (the board, or the back): of
+ * all the light that reached it before, how much still does, and what the
+ * light out of the face adds. */
+static vec3 shf_board(vec3 b, vec3 n)
+{
+	vec3 pu = shf_to_room(b);
+	struct key_light kl = key_at(pu, ROOM_KIND);
+	vec3 e = vmul(LIT_KEY_COL, kl.irr * fmax(vdot(n, kl.dir), 0.0));
+	vec3 all = e, left = vmul(e, shf_soft(b, kl.dir, 0.5, 1.0 / fmax(kl.ang, 0.02)));
+	e = sh_irradiance(n);
+	all = vadd(all, e);
+	left = vadd(left, vmul(e, shf_ao(b, n)));
+	/* the pair under the upper board, as shelf_lamp_at, one at a time */
+	for (int i = 0; i < 2; i++) {
+		vec3 dl = vsub(v3(i ? 8.2 : -8.2, SHELF_LAMP_Y, RM_SH_ZF - 0.15), pu);
+		double dist = fmax(vlen(dl), 0.70);
+		vec3 l = vmul(dl, 1.0 / dist);
+		double cone = smoothstepf(-0.05, 0.62, vdot(vmul(l, -1.0), vnorm(SHELF_LAMP_AIM)));
+		e = vmul(SHELF_LAMP_COL, SHELF_LAMP_IRR * cone * fmax(vdot(n, l), 0.0) / (dist * dist));
+		all = vadd(all, e);
+		left = vadd(left, vmul(e, shf_soft(b, l, dist * LK_RM_UNIT, 14.0)));
+	}
+	/* the face's light, on the board just in front of it */
+	const struct lkd_pumpkin *pk = &g_shf.pk[0];
+	vec3 f = vadd(pk->c, vmul(pk->z, LKJ_RX * 0.9));
+	vec3 to = vsub(b, f);
+	double dist = vlen(to);
+	double out = fmax(vdot(pk->z, to) / dist, 0.0), on = fmax(-vdot(n, to) / dist, 0.0);
+	vec3 glow = vmul(LKJ_LIGHT, 0.0030 * out * out * on / (dist * dist + 0.0004)
+		* smoothstepf(0.10, 0.03, dist));
+	return v3((left.x + glow.x) / fmax(all.x, 1e-6), (left.y + glow.y) / fmax(all.y, 1e-6),
+		(left.z + glow.z) / fmax(all.z, 1e-6));
+}
+
+/* the tone curve backwards: a pixel of the bake to the light it was */
+static double shf_unmap(double c)
+{
+	double y = clampf(pow(c, 2.2), 0.0, 0.99);
+	double A = 2.43 * y - 2.51, B = 0.59 * y - 0.03, C = 0.14 * y;
+	return (-B - sqrt(fmax(B * B - 4.0 * A * C, 0.0))) / (2.0 * A);
+}
+
+/* One ray through the picture at sx, sy (its pixels): what it shows there,
+ * against the bake's pixel (base, 0..1). 0: the bake's own, 1: the board,
+ * 2 and on: the thing (2 + its part). The post box on the desk stands
+ * between the eye and the right of the board: what is behind it is not
+ * seen. */
+static int shf_sample(const struct room_render *rr, double sx, double sy, vec3 base, vec3 *out)
+{
+	vec3 ro, rd;
+	room_ray(&rr->shelf_cam, sx / rr->w, sy / rr->h, &ro, &rd);
+	vec3 o = shf_from_room(ro);
+	double tb = rd.y < -1e-6 ? -o.y / rd.y : 1e9, t, t1;
+	if (lkd_slab(ro, rd, v3(RM_PB_CX - RM_PB_HX - 0.12, -0.05, RM_PB_CZ - RM_PB_HZ - 0.70),
+			v3(RM_PB_CX + RM_PB_HX + 0.12, RM_PB_SHOULDER + RM_PB_CAP_T + 0.50, RM_PB_CZ + RM_PB_HZ + 0.70),
+			tb / LK_RM_UNIT, &t, &t1)) {
+		return 0;
+	}
+	/* what is behind them: the board, or further in the case's back */
+	double tp = rd.z < -1e-6 ? (SHF_BACK - o.z) / rd.z : 1e9;
+	bool back = tp < tb;
+	tb = fmin(tb, tp);
+	int mat, part;
+	if (shf_trace(o, rd, tb, &t, &mat, &part)) {
+		*out = shf_shade(vadd(o, vmul(rd, t)), rd, mat, part);
+		return 2 + part;
+	}
+	vec3 b = vadd(o, vmul(rd, tb));
+	if (tb >= 1e9 || b.x < SHF_X0 || b.x > SHF_X1 || b.z > 0.0 || b.y > SHF_UP) {
+		return 0;
+	}
+	vec3 k = back ? shf_board(v3(b.x, b.y, SHF_BACK), v3(0.0, 0.0, 1.0))
+		: shf_board(v3(b.x, 0.0, b.z), v3(0.0, 1.0, 0.0));
+	if (fabs(k.x - 1.0) + fabs(k.y - 1.0) + fabs(k.z - 1.0) < 0.004) {
+		return 0;
+	}
+	*out = tonemap(v3(shf_unmap(base.x) * k.x, shf_unmap(base.y) * k.y, shf_unmap(base.z) * k.z));
+	return 1;
+}
+
+/* the part of the picture they make a difference to, a row at a time on
+ * as many threads as the door's tracer has (lk_run) */
+struct shf_job {
+	const struct room_render *rr;
+	const unsigned char *px;
+	int stride, x0, y0, bw, bh;
+	vec3 *col;
+	unsigned char *what;   /* shf_sample's, at each pixel's middle */
+	unsigned char *ss;     /* 1: the pixel taken again, four times over */
+	int pass, next;
+	pthread_mutex_t lock;
+};
+
+static void shf_row(struct shf_job *j, int y)
+{
+	for (int x = 0; x < j->bw; x++) {
+		int i = y * j->bw + x;
+		const unsigned char *p = j->px + (size_t)(j->y0 + y) * j->stride + (size_t)(j->x0 + x) * 4;
+		vec3 base = v3(p[2] / 255.0, p[1] / 255.0, p[0] / 255.0);
+		double sx = j->x0 + x, sy = j->y0 + y;
+		if (j->pass == 0) {
+			j->what[i] = (unsigned char)shf_sample(j->rr, sx + 0.5, sy + 0.5, base, &j->col[i]);
+			if (!j->what[i]) {
+				j->col[i] = base;
+			}
+			continue;
+		}
+		/* where what it shows is not what the pixels round it show, and
+		 * one side of that is one of them: four samples instead of one */
+		int a = j->what[i];
+		bool edge = false;
+		for (int k = 0; k < 4 && !edge; k++) {
+			int nx = x + (k == 0) - (k == 1), ny = y + (k == 2) - (k == 3);
+			int b = nx >= 0 && ny >= 0 && nx < j->bw && ny < j->bh ? j->what[ny * j->bw + nx] : a;
+			edge = a != b && (a | b) > 1;
+		}
+		if (!edge) {
+			continue;
+		}
+		vec3 sum = v3(0, 0, 0);
+		for (int k = 0; k < 4; k++) {
+			vec3 c = base;
+			shf_sample(j->rr, sx + SS_OFF[k][0], sy + SS_OFF[k][1], base, &c);
+			sum = vadd(sum, c);
+		}
+		j->col[i] = vmul(sum, 0.25);
+		j->ss[i] = 1;
+	}
+}
+
+static void *shf_worker(void *arg)
+{
+	struct shf_job *j = arg;
+	for (;;) {
+		pthread_mutex_lock(&j->lock);
+		int y = j->next++;
+		pthread_mutex_unlock(&j->lock);
+		if (y >= j->bh) {
+			break;
+		}
+		shf_row(j, y);
+	}
+	return NULL;
+}
+
+static void shf_run(struct shf_job *j)
+{
+	j->next = 0;
+	long nproc = sysconf(_SC_NPROCESSORS_ONLN);
+	int n = (int)(nproc > 0 ? nproc : 1);
+	n = n > 8 ? 8 : n;
+	pthread_t th[8];
+	int started = 0;
+	for (int i = 0; i + 1 < n; i++) {
+		if (pthread_create(&th[started], NULL, shf_worker, j) == 0) {
+			started++;
+		}
+	}
+	shf_worker(j);
+	for (int i = 0; i < started; i++) {
+		pthread_join(th[i], NULL);
+	}
+}
+
+static void shelf_fall_paint(const struct room_render *rr, cairo_surface_t *s)
+{
+	shf_make(&rr->shelf_cam);
+	cairo_surface_flush(s);
+	unsigned char *px = cairo_image_surface_get_data(s);
+	int stride = cairo_image_surface_get_stride(s), W = rr->w, H = rr->h;
+	double x0 = W, y0 = H, x1 = 0.0, y1 = 0.0;
+	for (int k = 0; k < 8; k++) {
+		vec3 c = shf_to_room(v3(k & 1 ? SHF_X1 : SHF_X0, k & 2 ? SHF_UP : 0.0, k & 4 ? 0.0 : SHF_BACK));
+		double u, v;
+		if (!px || !room_project(&rr->shelf_cam, c, &u, &v)) {
+			return;
+		}
+		x0 = fmin(x0, u * W);
+		x1 = fmax(x1, u * W);
+		y0 = fmin(y0, v * H);
+		y1 = fmax(y1, v * H);
+	}
+	struct shf_job j = { .rr = rr, .px = px, .stride = stride };
+	j.x0 = (int)clampf(floor(x0) - 2.0, 0.0, W - 1);
+	j.y0 = (int)clampf(floor(y0) - 2.0, 0.0, H - 1);
+	j.bw = (int)clampf(ceil(x1) + 2.0, 0.0, W - 1) - j.x0 + 1;
+	j.bh = (int)clampf(ceil(y1) + 2.0, 0.0, H - 1) - j.y0 + 1;
+	size_t n = (size_t)j.bw * j.bh;
+	j.col = malloc(n * sizeof *j.col);
+	j.what = malloc(n);
+	j.ss = calloc(n, 1);
+	if (j.col && j.what && j.ss) {
+		pthread_mutex_init(&j.lock, NULL);
+		for (j.pass = 0; j.pass < 2; j.pass++) {
+			shf_run(&j);
+		}
+		pthread_mutex_destroy(&j.lock);
+		for (int y = 0; y < j.bh; y++) {
+			for (int x = 0; x < j.bw; x++) {
+				size_t i = (size_t)y * j.bw + x;
+				if (!j.what[i] && !j.ss[i]) {
+					continue;
+				}
+				/* dithered, as the trace's own pixels are */
+				int X = j.x0 + x, Y = j.y0 + y;
+				double dz = room_hash(X, Y + 0x7777) - 0.5;
+				unsigned char *p = px + (size_t)Y * stride + (size_t)X * 4;
+				p[2] = (unsigned char)clampf(j.col[i].x * 255.0 + dz + 0.5, 0.0, 255.0);
+				p[1] = (unsigned char)clampf(j.col[i].y * 255.0 + dz + 0.5, 0.0, 255.0);
+				p[0] = (unsigned char)clampf(j.col[i].z * 255.0 + dz + 0.5, 0.0, 255.0);
+			}
+		}
+	}
+	free(j.col);
+	free(j.what);
+	free(j.ss);
+	cairo_surface_mark_dirty(s);
 }
 
 static void lk_material(const struct lk_scene *sc, const struct lk_hit *h, vec3 p, struct lk_mat *m)
@@ -33270,7 +34449,8 @@ static void lk_material(const struct lk_scene *sc, const struct lk_hit *h, vec3 
 	if (sc->ndeco && !m->unlit && h->id != LK_DECO) {
 		m->ao *= lkd_ao(sc, p, h->n);
 	}
-	bool lit_or_aloft = h->id == LK_DECO && (h->sub == DM_BULB || h->sub == DM_BALLOON);
+	bool lit_or_aloft = h->id == LK_DECO && (h->sub == DM_BULB || h->sub == DM_BALLOON
+		|| h->sub == DM_GLOW || h->sub == DM_FLESH);
 	if (!m->unlit && !lit_or_aloft && (sc->rig.wet > 0.0 || sc->rig.snow > 0.0) && p.z > -0.01) {
 		lk_weather_on(sc, h, p, m);
 	}
@@ -33638,6 +34818,11 @@ struct lk_job {
 	unsigned char *aa;
 	int pass, next;
 	pthread_mutex_t lock;
+	/* the fine trace, on threads of its own: at the back of the queue
+	 * (thread_to_the_back), and given up at the next row once stop is
+	 * set */
+	bool back;
+	atomic_bool *stop;
 };
 
 static uint32_t lk_pack(vec3 c, int x, int y)
@@ -33678,7 +34863,13 @@ static void lk_row(struct lk_job *j, int y)
 static void *lk_worker(void *arg)
 {
 	struct lk_job *j = arg;
+	if (j->back) {
+		thread_to_the_back();
+	}
 	for (;;) {
+		if (j->stop && atomic_load(j->stop)) {
+			break;
+		}
 		pthread_mutex_lock(&j->lock);
 		int y = j->next++;
 		pthread_mutex_unlock(&j->lock);
@@ -33780,9 +34971,10 @@ static void lk_post(unsigned char *px, int stride, int W, int H, double amount)
 	free(tmp);
 }
 
-/* the scene from cam, W x H pixels, the edges done finely or not */
+/* the scene from cam, W x H pixels, the edges done finely or not -- a fine
+ * one being the background's (lk_bg_start), NULL if it was stopped */
 static cairo_surface_t *lk_trace(const struct lk_scene *sc, const struct lk_cam *cam, int W, int H,
-	bool fine)
+	bool fine, atomic_bool *stop)
 {
 	cairo_surface_t *img = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
 	unsigned char *aa = malloc((size_t)W * H);
@@ -33798,21 +34990,28 @@ static cairo_surface_t *lk_trace(const struct lk_scene *sc, const struct lk_cam 
 		sc = rs;
 	}
 	struct lk_job j = { .sc = sc, .cam = *cam, .px = cairo_image_surface_get_data(img),
-		.stride = cairo_image_surface_get_stride(img), .W = W, .H = H, .aa = aa };
+		.stride = cairo_image_surface_get_stride(img), .W = W, .H = H, .aa = aa,
+		.back = fine, .stop = stop };
 	j.pass = 0;
 	lk_run(&j);
 	/* in 2D: the edges as they come, and no glow */
 	bool flat = desk_gfx_level() == DESK_GFX_2D;
-	if (fine && !flat) {
+	bool stopped = stop && atomic_load(stop);
+	if (fine && !flat && !stopped) {
 		j.pass = 1;
 		lk_run(&j);
+		stopped = stop && atomic_load(stop);
 	}
-	if (!flat) {
+	if (!flat && !stopped) {
 		lk_post(j.px, j.stride, W, H, sc->post);
 	}
 	cairo_surface_mark_dirty(img);
 	free(aa);
 	free(rs);
+	if (stopped) {
+		cairo_surface_destroy(img);
+		return NULL;
+	}
 	return img;
 }
 
@@ -34004,10 +35203,11 @@ static struct {
 	cairo_surface_t *sign, *gold, *plate;
 	struct lk_frame rest, last;
 	int still;
-	double scale;      /* of the screen's pixels, while the eye moves */
+	double scale;      /* of the screen's pixels, while the eye moves (kept) */
 } g_lock;
 
 static void lk_bg_collect(bool wait);
+static void lk_bg_stop(void);
 
 static void lk_frame_drop(struct lk_frame *f)
 {
@@ -34019,7 +35219,7 @@ static void lk_frame_drop(struct lk_frame *f)
 
 void desk_lock_forget(void)
 {
-	lk_bg_collect(true);
+	lk_bg_stop();
 	lk_frame_drop(&g_lock.rest);
 	lk_frame_drop(&g_lock.last);
 	if (g_lock.sign) {
@@ -34031,7 +35231,11 @@ void desk_lock_forget(void)
 	if (g_lock.plate) {
 		cairo_surface_destroy(g_lock.plate);
 	}
+	/* how fine this machine keeps the frame rate at: where the next door
+	 * begins */
+	double scale = g_lock.scale;
 	memset(&g_lock, 0, sizeof g_lock);
+	g_lock.scale = scale;
 }
 
 static void lk_tex_of(struct lk_tex *t, cairo_surface_t *s)
@@ -34111,11 +35315,17 @@ static double lk_now(void)
 /* The fine trace of wherever the eye has come to rest is the slow one --
  * most of a second on a big screen -- so it is done on a thread of its
  * own while the frame there is shown coarse, and put in place when it is
- * done. It holds a reference to the picture of the room it may need. */
+ * done. It holds a reference to the picture of the room it may need. It
+ * goes at the back of the queue, and when it is no longer wanted -- the
+ * door gone, or another size -- it is stopped, not waited out: on an old
+ * machine, behind a door dressed for a day, it is many seconds, and the
+ * coarse frames that went at its pace and the frame that waited for it
+ * stood the door still for that long (seven seconds, Halloween's, at 2010's
+ * speed in the lab). */
 static struct {
 	pthread_t th;
 	bool running;
-	atomic_bool done;
+	atomic_bool done, stop;
 	struct lk_scene sc;
 	struct lk_cam cam;       /* in the w x h the frame is for */
 	struct lk_cam px;        /* and in the picture's own pixels */
@@ -34127,7 +35337,7 @@ static struct {
 static void *lk_bg_worker(void *arg)
 {
 	(void)arg;
-	g_lk_bg.img = lk_trace(&g_lk_bg.sc, &g_lk_bg.px, g_lk_bg.W, g_lk_bg.H, true);
+	g_lk_bg.img = lk_trace(&g_lk_bg.sc, &g_lk_bg.px, g_lk_bg.W, g_lk_bg.H, true, &g_lk_bg.stop);
 	atomic_store(&g_lk_bg.done, true);
 	return NULL;
 }
@@ -34154,6 +35364,7 @@ static void lk_bg_start(const struct lk_scene *sc, const struct lk_cam *cam, int
 			? cairo_surface_reference(sc->room.keep[i]) : NULL;
 	}
 	atomic_store(&g_lk_bg.done, false);
+	atomic_store(&g_lk_bg.stop, false);
 	if (pthread_create(&g_lk_bg.th, NULL, lk_bg_worker, NULL) == 0) {
 		g_lk_bg.running = true;
 	} else {
@@ -34213,6 +35424,15 @@ static void lk_bg_collect(bool wait)
 	f->fine = true;
 }
 
+/* the fine trace no longer wanted: stopped at the row it is on */
+static void lk_bg_stop(void)
+{
+	if (g_lk_bg.running) {
+		atomic_store(&g_lk_bg.stop, true);
+	}
+	lk_bg_collect(true);
+}
+
 bool desk_lock_settling(void)
 {
 	lk_bg_collect(false);
@@ -34257,8 +35477,11 @@ static struct lk_frame *lk_frame_for(struct lk_scene *sc, const struct lk_cam *c
 	}
 	g_lock.still = 0;
 	if (g_lock.scale <= 0.0) {
-		/* to begin with, about a third of a million pixels */
-		g_lock.scale = clampf(sqrt(0.35e6 / ((double)W * H)), 0.20, 0.75);
+		/* to begin with, as coarse as it goes, and finer frame by frame
+		 * while the frame rate holds (under the door fading in): begun
+		 * at a third of a million pixels, the first door on an old
+		 * machine stood still for seconds */
+		g_lock.scale = 0.20;
 	}
 	double s = g_lock.scale;
 	int fw = (int)ceil(W * s), fh = (int)ceil(H * s);
@@ -34267,10 +35490,11 @@ static struct lk_frame *lk_frame_for(struct lk_scene *sc, const struct lk_cam *c
 	fc.cx *= k * s;
 	fc.cy *= k * s;
 	double t0 = lk_now();
-	cairo_surface_t *img = lk_trace(sc, &fc, fw, fh, false);
+	cairo_surface_t *img = lk_trace(sc, &fc, fw, fh, false, NULL);
 	double dt = lk_now() - t0;
-	/* hold the frame rate: about 25 ms a frame */
-	g_lock.scale = clampf(g_lock.scale * clampf(sqrt(0.025 / fmax(dt, 1e-4)), 0.8, 1.2),
+	/* hold the frame rate: about 25 ms a frame -- a good deal coarser at
+	 * once after a frame that took far longer, finer a little at a time */
+	g_lock.scale = clampf(g_lock.scale * clampf(sqrt(0.025 / fmax(dt, 1e-4)), 0.5, 1.2),
 		0.20, 0.75);
 	lk_frame_drop(f);
 	f->img = img;
@@ -34592,7 +35816,8 @@ bool desk_lock_fx_wanted(const struct desk_door_mood *m)
 {
 	return m && m->set && (m->weather == DESK_WX_RAIN || m->weather == DESK_WX_SNOW
 		|| m->weather == DESK_WX_STORM
-		|| (m->decor & (DESK_DECOR_XMAS | DESK_DECOR_NEWYEAR | DESK_DECOR_BIRTHDAY)));
+		|| (m->decor & (DESK_DECOR_XMAS | DESK_DECOR_NEWYEAR | DESK_DECOR_BIRTHDAY
+			| DESK_DECOR_HALLOWEEN)));
 }
 
 static double lkfx_hash(int i, int salt)
@@ -34601,7 +35826,7 @@ static double lkfx_hash(int i, int salt)
 }
 
 /* a light's glow, its own breath: each slow and out of step */
-static void lkfx_bulbs(cairo_t *cr, const struct lk_cam *cam, double t, double a)
+static void lkfx_bulbs(cairo_t *cr, const struct lk_cam *cam, unsigned decor, double t, double a)
 {
 	cairo_save(cr);
 	cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
@@ -34621,7 +35846,7 @@ static void lkfx_bulbs(cairo_t *cr, const struct lk_cam *cam, double t, double a
 			if (x < -r || y < -r || x > g_lk_view.w + r || y > g_lk_view.h + r) {
 				continue;
 			}
-			vec3 col = LKD_BULB_COL[(k + run * 2) % LKG_N];
+			vec3 col = lkd_bulb_col(decor, run, k);
 			double h1 = lkfx_hash(k, run + 1), h2 = lkfx_hash(k, run + 11);
 			double breath = 0.5 + 0.5 * sin(t * (0.7 + 0.9 * h1) + h2 * 6.283);
 			double twinkle = pow(breath, 3.0);
@@ -34636,6 +35861,39 @@ static void lkfx_bulbs(cairo_t *cr, const struct lk_cam *cam, double t, double a
 			cairo_pattern_destroy(p);
 		}
 	}
+	cairo_restore(cr);
+}
+
+/* the jack-o'-lantern's light, never quite steady, glowing out of its face
+ * -- on the door, swung in as far as it is (radians), so facing away
+ * as it goes; brightest at night */
+static void lkfx_jack(cairo_t *cr, const struct lk_cam *cam, double door, double t, double a,
+	double night)
+{
+	const struct lkd_pumpkin *pk = &g_lkp[0];
+	vec3 f = vadd(pk->c, vadd(vmul(pk->y, -0.004), vmul(pk->z, 0.058)));
+	double cd = cos(door), sd = sin(door);
+	vec3 c = v3(f.x * cd + f.z * sd + LK_HX, f.y, -f.x * sd + f.z * cd + LK_HZ);
+	vec3 out = v3(pk->z.x * cd + pk->z.z * sd, pk->z.y, -pk->z.x * sd + pk->z.z * cd);
+	double facing = vdot(out, vnorm(vsub(cam->eye, c)));
+	double x, y;
+	if (facing <= 0.0 || !lk_project(cam, c, &x, &y)) {
+		return;
+	}
+	double r = 0.085 * cam->f / fmax(vlen(vsub(c, cam->eye)), 0.05);
+	double flick = 0.80 + 0.10 * sin(t * 7.9 + 0.3) * sin(t * 3.1) + 0.06 * sin(t * 13.7 + 1.1)
+		+ 0.04 * sin(t * 21.3 + 2.0);
+	double g = a * flick * smoothstepf(0.0, 0.5, facing) * (0.35 + 0.65 * night);
+	cairo_save(cr);
+	cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
+	cairo_pattern_t *p = cairo_pattern_create_radial(x, y, 0.0, x, y, r);
+	cairo_pattern_add_color_stop_rgba(p, 0.0, LKJ_LIGHT.x, LKJ_LIGHT.y, LKJ_LIGHT.z, 0.30 * g);
+	cairo_pattern_add_color_stop_rgba(p, 0.35, LKJ_LIGHT.x, LKJ_LIGHT.y, LKJ_LIGHT.z, 0.11 * g);
+	cairo_pattern_add_color_stop_rgba(p, 1.0, LKJ_LIGHT.x, LKJ_LIGHT.y, LKJ_LIGHT.z, 0.0);
+	cairo_set_source(cr, p);
+	cairo_arc(cr, x, y, r, 0, 2.0 * M_PI);
+	cairo_fill(cr);
+	cairo_pattern_destroy(p);
 	cairo_restore(cr);
 }
 
@@ -35045,8 +36303,14 @@ void desk_draw_lock_fx(cairo_t *cr, int w, int h, const struct desk_lock_look *l
 	lk_rig_for(m, &rig);
 	bool night = rig.porch > 0.5;
 	const struct lk_cam *cam = &g_lk_view.cam;
-	if (m->decor & DESK_DECOR_XMAS) {
-		lkfx_bulbs(cr, cam, t, a);
+	/* what the door is dressed in, as lkd_dress has it */
+	bool fall = (m->decor & DESK_DECOR_HALLOWEEN) && !(m->decor & (DESK_DECOR_XMAS | DESK_DECOR_NEWYEAR));
+	if ((m->decor & DESK_DECOR_XMAS) || fall) {
+		lkfx_bulbs(cr, cam, m->decor, t, a);
+	}
+	if (fall) {
+		pthread_once(&g_lkd_fall_once, lkd_fall_make);
+		lkfx_jack(cr, cam, clampf(lk->open, 0.0, 1.0) * LK_SWING, t, a, rig.porch);
 	}
 	if (m->decor & DESK_DECOR_BIRTHDAY) {
 		lkfx_strings(cr, cam, t, a, night ? 0.75 : 1.0);

@@ -5,10 +5,11 @@
 #   desk-report            write ~/desk-report.txt and say what to do with it
 #   desk-report --print    the same on the terminal instead
 #
-# It holds DEsk's version, which Linux, the graphics (card and driver), how
-# the screens and the session were found, the last session's log and the
-# one before, the last install's log, whether DEsk fell (coredumpctl), and
-# what the system's journal says of DEsk and the login screen since this boot.
+# It holds DEsk's version, which Linux, the graphics (each card, its driver
+# and the screens on it), how the screens and the session were found, the
+# last session's log and the one before, the last install's log, whether
+# DEsk fell (coredumpctl), and what the system's journal says of DEsk and
+# the login screen since this boot.
 # Run it as yourself, from a terminal on any desktop or a console -- DEsk
 # need not be running, or even start.
 #
@@ -80,12 +81,44 @@ report() {
 	fi
 	ls /dev/dri 2>/dev/null | tr '\n' ' '
 	echo
+	# each card, the driver behind it and the screens plugged into it. The
+	# firmware's own screen (simpledrm), left beside a GPU's, wlroots takes
+	# for the main one; the desk leaves it out when a real card has screens
+	# of its own (cards.c), and its log says so ("screens: ...").
+	firm="" n=0
+	for c in /sys/class/drm/card[0-9]*; do
+		card=${c##*/}
+		case "$card" in *-*) continue ;; esac
+		drv=$(readlink "$c/device/driver" 2>/dev/null)
+		drv=${drv##*/}
+		on=""
+		for k in "$c"-*; do
+			if [ "$(cat "$k/status" 2>/dev/null)" = connected ]; then
+				k=${k##*/}
+				on="$on ${k#"$card"-}"
+			fi
+		done
+		boot=$(cat "$c/device/boot_vga" 2>/dev/null)
+		echo "$card: ${drv:-?}${boot:+, boot_vga $boot}; screens:${on:- none}"
+		n=$((n + 1))
+		case "$drv" in simple-framebuffer|efi-framebuffer|vesa-framebuffer|of-display) firm=$card ;; esac
+	done
+	if [ -n "$firm" ] && [ "$n" -gt 1 ]; then
+		echo "note: $firm is the firmware's own screen, beside a GPU's"
+	fi
 	if command -v glxinfo >/dev/null 2>&1; then
 		glxinfo -B 2>/dev/null | grep -E 'renderer string|version string' | head -n 4
 	fi
-	if [ -r /sys/module/nvidia_drm/parameters/modeset ]; then
-		echo "nvidia_drm modeset: $(cat /sys/module/nvidia_drm/parameters/modeset)"
-	fi
+	for p in modeset fbdev; do
+		if [ -r "/sys/module/nvidia_drm/parameters/$p" ]; then
+			echo "nvidia_drm $p: $(cat "/sys/module/nvidia_drm/parameters/$p")"
+		fi
+	done
+	# the kernel's options that choose its screens and their drivers
+	opts=$(tr ' ' '\n' < /proc/cmdline 2>/dev/null | grep -E \
+		'^(nvidia|nvidia_drm|nvidia-drm|nouveau|amdgpu|radeon|i915|xe)\.|^(video|initcall_blacklist|modprobe\.blacklist)=|^nomodeset$' \
+		| tr '\n' ' ')
+	[ -n "$opts" ] && echo "kernel options: $opts"
 	# how the last session put its screen together (pixman: on the processor,
 	# where screen sharing cannot start) -- and what shares the screen
 	grep -h -m 1 'put together on the processor' "$state/session.log" 2>/dev/null \

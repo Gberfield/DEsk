@@ -799,9 +799,15 @@ bool desk_icon_path(const char *name, const char *extra_dir, char *out, size_t n
 }
 
 /* The letter a sheet gets printed with when there is no picture. Takes the
- * first character of the name, whole if it is multibyte. */
+ * first character of the name, whole if it is multibyte -- and "?" for a
+ * name that does not start with a whole UTF-8 letter (an X title in
+ * Latin-1, a name cut off inside its first letter): read on past it, that
+ * went beyond the end of the name, and cairo, given it, stops drawing. */
 void desk_initial_of(const char *name, char *out, size_t n)
 {
+	if (!n) {
+		return;
+	}
 	out[0] = '\0';
 	if (!name || !*name) {
 		str_copy(out, n, "?");
@@ -809,15 +815,23 @@ void desk_initial_of(const char *name, char *out, size_t n)
 	}
 	unsigned char c = (unsigned char)name[0];
 	size_t len = 1;
-	if (c >= 0xf0) {
+	if (c >= 0xf8 || (c >= 0x80 && c < 0xc0)) {
+		len = 0;
+	} else if (c >= 0xf0) {
 		len = 4;
 	} else if (c >= 0xe0) {
 		len = 3;
 	} else if (c >= 0xc0) {
 		len = 2;
 	}
-	if (len >= n) {
-		len = n - 1;
+	for (size_t i = 1; i < len; i++) {
+		if (((unsigned char)name[i] & 0xc0) != 0x80) {
+			len = 0;   /* stops at the end of the name too */
+		}
+	}
+	if (len == 0 || len >= n) {
+		str_copy(out, n, "?");
+		return;
 	}
 	memcpy(out, name, len);
 	out[len] = '\0';
@@ -859,6 +873,36 @@ static void take_localised(const char *key, const char *base, const char *loc,
 		*score = s;
 		str_copy(dst, dn, val);
 	}
+}
+
+/* Whatever in s is not UTF-8 taken out, in place: a desktop file in some
+ * other encoding, or a name cut off inside a letter where it was copied
+ * into its field. What is drawn of it goes to cairo, which, given broken
+ * UTF-8, draws nothing more on that cr. */
+static void utf8_scrub(char *s)
+{
+	unsigned char *p = (unsigned char *)s, *o = p;
+	while (*p) {
+		int len = *p < 0x80 ? 1 : (*p >= 0xc2 && *p <= 0xdf) ? 2 : (*p >= 0xe0 && *p <= 0xef) ? 3
+			: (*p >= 0xf0 && *p <= 0xf4) ? 4 : 0;
+		bool ok = len > 0;
+		for (int k = 1; ok && k < len; k++) {
+			ok = (p[k] & 0xc0) == 0x80;
+		}
+		if (ok && len == 3) {
+			ok = !(p[0] == 0xe0 && p[1] < 0xa0) && !(p[0] == 0xed && p[1] > 0x9f);
+		} else if (ok && len == 4) {
+			ok = !(p[0] == 0xf0 && p[1] < 0x90) && !(p[0] == 0xf4 && p[1] > 0x8f);
+		}
+		if (!ok) {
+			p++;
+			continue;
+		}
+		memmove(o, p, (size_t)len);
+		o += len;
+		p += len;
+	}
+	*o = '\0';
 }
 
 static bool parse_entry(const char *file, struct entry *e)
@@ -940,6 +984,11 @@ static bool parse_entry(const char *file, struct entry *e)
 		}
 	}
 	fclose(f);
+	/* the words that are shown and searched */
+	utf8_scrub(e->name);
+	utf8_scrub(e->name_c);
+	utf8_scrub(e->generic);
+	utf8_scrub(e->keywords);
 	return true;
 }
 

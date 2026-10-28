@@ -417,6 +417,9 @@ unsigned desk_occasion_today(void)
 	if (tm.tm_mon == 0 && tm.tm_mday <= 3) {
 		o |= DESK_OCC_NEWYEAR;
 	}
+	if (tm.tm_mon == 9 && tm.tm_mday == 31) {
+		o |= DESK_OCC_HALLOWEEN;
+	}
 	int bm = g_conf.bday_month, bd = g_conf.bday_day;
 	if (bm >= 1 && bm <= 12 && bd >= 1) {
 		if (tm.tm_mon + 1 == bm && tm.tm_mday == bd) {
@@ -452,7 +455,8 @@ void desk_occasion_mood(struct desk_door_mood *m)
 	unsigned occ = desk_occasion_today();
 	m->decor = (occ & DESK_OCC_XMAS ? DESK_DECOR_XMAS : 0)
 		| (occ & DESK_OCC_NEWYEAR ? DESK_DECOR_NEWYEAR : 0)
-		| (occ & DESK_OCC_BIRTHDAY ? DESK_DECOR_BIRTHDAY : 0);
+		| (occ & DESK_OCC_BIRTHDAY ? DESK_DECOR_BIRTHDAY : 0)
+		| (occ & DESK_OCC_HALLOWEEN ? DESK_DECOR_HALLOWEEN : 0);
 	struct tm tm;
 	localtime_r(&t, &tm);
 	m->year = tm.tm_year + 1900;

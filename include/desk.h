@@ -88,6 +88,9 @@ void desk_room_drawer_offset(int screen_h, double open, double scale,
 /* The bookcase, with the spine labels printed over it. hover is a binder
  * index or -1. */
 void desk_draw_shelf(cairo_t *cr, int w, int h, int hover, double hover_t, int taken);
+/* what the day puts on the bookcase's lower board (DESK_DECOR_HALLOWEEN or
+ * 0), from then on in every picture of the case */
+void desk_shelf_dress(unsigned decor);
 int desk_shelf_hit(int w, int h, double px, double py);
 /* The same view as a compositor keeps it (see draw.c): the rectangle a
  * binder can slide out in, anywhere in its slide; and the three things on
@@ -377,7 +380,7 @@ enum { DESK_FORM_SECTION, DESK_FORM_CHECK, DESK_FORM_CHOICE, DESK_FORM_DATE,
  * faint, and what is written there instead is options[1] -- "not installed
  * -- e.g. a package". */
 /* the most words a choice has, its NULL included */
-#define DESK_FORM_OPTS 20
+#define DESK_FORM_OPTS 32
 struct desk_form_row {
 	int kind;
 	const char *label;
@@ -957,7 +960,9 @@ enum desk_weather {
 	DESK_WX_CLEAR = 0, DESK_WX_CLOUDS, DESK_WX_OVERCAST, DESK_WX_FOG,
 	DESK_WX_RAIN, DESK_WX_SNOW, DESK_WX_STORM, DESK_WX_N
 };
-enum { DESK_DECOR_XMAS = 1, DESK_DECOR_NEWYEAR = 2, DESK_DECOR_BIRTHDAY = 4 };
+enum {
+	DESK_DECOR_XMAS = 1, DESK_DECOR_NEWYEAR = 2, DESK_DECOR_BIRTHDAY = 4, DESK_DECOR_HALLOWEEN = 8
+};
 struct desk_door_mood {
 	bool set;
 	double sun_el, sun_az;

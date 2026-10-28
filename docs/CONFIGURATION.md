@@ -14,7 +14,7 @@ unless set otherwise.
 
 | File | Written by | What it holds |
 | --- | --- | --- |
-| `$XDG_CONFIG_HOME/desk/shell.conf` | Shell Settings, you | DEsk's settings (below). |
+| `$XDG_CONFIG_HOME/desk/shell.conf` | Shell Settings, you | DEsk's settings (below). It is not there until you first change a setting in Shell Settings, which writes it; you can also create it yourself. Until then the machine's defaults (the next row) and the defaults below hold. |
 | `/etc/xdg/desk/shell.conf` | the installer | The machine's defaults, under each user's own file; the installer writes the Graphics level it measured. |
 | `$XDG_CONFIG_HOME/desk/displays.conf` | DEsk | How a display tool last arranged each set of screens. |
 | `$XDG_CONFIG_HOME/desk/drawer` | DEsk | The programs in the drawer, in order. |
@@ -63,6 +63,14 @@ One `key = value` per line; `#` starts a comment.
 | `screen_off` | `never`, or minutes (`1` to `1440`) | `10` | Minutes untouched before the screen goes dark. |
 | `lock_on_screen_off` | `yes`, `no` | `yes` | Lock (the front door) when it does. |
 
+A key or the mouse lights the screen again. Some monitors say they have been
+unplugged when they go to sleep (an HDMI or DisplayPort monitor dropping its
+hot-plug signal); DEsk then waits for the screen to come back, and a screen
+that comes back while the desk is dark stays dark until a key or the mouse.
+While there is no screen at all, keys and clicks do nothing. A monitor that
+stays asleep like this needs its own power button; turning off its deep-sleep
+or power-saving setting, or `screen_off = never`, avoids it.
+
 ### Keyboard and pointer
 
 | Key | Values | Default | |
@@ -72,7 +80,7 @@ One `key = value` per line; `#` starts a comment.
 | `pointer_speed` | `slow`, `normal`, `fast`, or `-1` to `1` | `normal` | |
 | `left_handed` | `yes`, `no` | `no` | |
 | `keyboard_layout` | `system`, or an xkb layout (`us`, `jp`, `de`, `us(intl)`) | `system` | |
-| `keyboard_second` | `none`, or an xkb layout | `none` | A second layout to switch to. |
+| `keyboard_second` | `none`, or an xkb layout (`ara`, `ru`, `gr`) | `none` | A second layout to switch to. DEsk's shortcuts go by the first layout's keys while it is on. |
 | `keyboard_switch` | `alt_shift`, `super_space`, `ctrl_shift`, `caps_lock` | `alt_shift` | |
 | `key_repeat` | `slow`, `normal`, `fast` | `normal` | |
 

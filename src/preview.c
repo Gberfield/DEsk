@@ -654,13 +654,14 @@ static int write_lock(const char *path, int w, int h)
 			looks[i].mood.moon = 0.8;
 			looks[i].mood.decor = !strcmp(dc, "xmas") ? DESK_DECOR_XMAS
 				: !strncmp(dc, "newyear", 7) ? DESK_DECOR_NEWYEAR
-				: !strcmp(dc, "birthday") ? DESK_DECOR_BIRTHDAY : 0;
+				: !strcmp(dc, "birthday") ? DESK_DECOR_BIRTHDAY
+				: !strcmp(dc, "halloween") ? DESK_DECOR_HALLOWEEN : 0;
 			looks[i].mood.year = 2027;
 		}
 	}
 	if (getenv("DESK_LOCK_MOODS")) {
 		/* the door waiting, at twelve hours and weathers (DESK_LOCK_DECOR=
-		 * xmas, newyear or birthday dresses it for all of them) */
+		 * xmas, newyear, birthday or halloween dresses it for all of them) */
 		static const struct { const char *what; double el, az; int wx; double heavy; } M[N] = {
 			{ "night, clear", -30, 0, DESK_WX_CLEAR, 0 },
 			{ "dawn", 1.5, 95, DESK_WX_CLEAR, 0 },
@@ -678,7 +679,8 @@ static int write_lock(const char *path, int w, int h)
 		const char *dc = getenv("DESK_LOCK_DECOR");
 		unsigned decor = !dc ? 0 : !strcmp(dc, "xmas") ? DESK_DECOR_XMAS
 			: !strncmp(dc, "newyear", 7) ? DESK_DECOR_NEWYEAR
-			: !strcmp(dc, "birthday") ? DESK_DECOR_BIRTHDAY : 0;
+			: !strcmp(dc, "birthday") ? DESK_DECOR_BIRTHDAY
+			: !strcmp(dc, "halloween") ? DESK_DECOR_HALLOWEEN : 0;
 		for (int i = 0; i < N; i++) {
 			memset(&looks[i], 0, sizeof looks[i]);
 			looks[i].name = name;
@@ -762,6 +764,11 @@ static int write_lock(const char *path, int w, int h)
 int main(int argc, char **argv)
 {
 	desk_compat();
+	/* DESK_LOCK_DECOR=halloween: the bookcase dressed too (--shelf, and
+	 * the room through the door) */
+	if (getenv("DESK_LOCK_DECOR") && !strcmp(getenv("DESK_LOCK_DECOR"), "halloween")) {
+		desk_shelf_dress(DESK_DECOR_HALLOWEEN);
+	}
 	const char *path = "desk-preview.png";
 	int w = 1600, h = 1000;
 	bool demo = true;

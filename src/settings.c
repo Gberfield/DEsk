@@ -224,11 +224,13 @@ static const char *const LAYOUT_WORDS[] = { "The machine's", "English (US)", "En
 	"Russian", "Korean", "Swedish", "Norwegian", "Danish", "Finnish", NULL };
 static const char *const LAYOUT_VALS[] = { "system", "us", "gb", "jp", "de", "fr", "es", "it",
 	"pt", "br", "ru", "kr", "se", "no", "dk", "fi" };
+/* and the second: those, and the scripts a second layout is most often for */
 static const char *const SECOND_WORDS[] = { "None", "English (US)", "English (UK)", "Japanese",
 	"German", "French", "Spanish", "Italian", "Portuguese", "Portuguese (Brazil)", "Russian",
-	"Korean", "Swedish", "Norwegian", "Danish", "Finnish", NULL };
+	"Korean", "Swedish", "Norwegian", "Danish", "Finnish", "Arabic", "Persian", "Hebrew", "Greek",
+	"Ukrainian", "Hindi", "Thai", NULL };
 static const char *const SECOND_VALS[] = { "none", "us", "gb", "jp", "de", "fr", "es", "it", "pt",
-	"br", "ru", "kr", "se", "no", "dk", "fi" };
+	"br", "ru", "kr", "se", "no", "dk", "fi", "ara", "ir", "il", "gr", "ua", "in", "th" };
 static const char *const SWITCH_WORDS[] = { "Alt+Shift", "Super+Space", "Ctrl+Shift", "Caps Lock",
 	NULL };
 static const char *const SWITCH_VALS[] = { "alt_shift", "super_space", "ctrl_shift", "caps_lock" };

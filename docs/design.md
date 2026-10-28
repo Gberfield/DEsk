@@ -1136,6 +1136,163 @@ Discord（Vesktop）の画面共有で共有するものを選べない（Discor
   - ASan＋UBSan の机で、2D・1920 の全部の動きと雨の玄関、Low・1920 の正月の紙吹雪・本・Control Panel・雨の玄関を通して、エラー 0。
   - 4 構成で警告 0。draw.c・wm.c の静的解析（範囲を絞ったもの）0。
 
+### 2.4.77 画面が消えたあと二度と点かない：眠ると「抜かれた」と言うモニター（2026-10-23、次の版で）
+
+既定の 10 分で画面が消えたあと、キーもマウスも効かず、HDMI の信号は無いまま。ssh では機械は生きている（GitHub #18、JamesStallings さん、Debian 13、AMD 7730U の小さな PC、SANSUI の HDMI モニター）。
+
+- 原因：本人の desk-report で、画面を切った 6 秒後に `'HDMI-A-1' disconnected`、続けて「last output went away; shutting down」でセッションが終わっていた。`screen_off = 1` にした回は、キーで点けた 3 秒後に同じく disconnected で終わり。HDMI や DisplayPort のモニターには、眠るとき（や信号が戻ったとき）にホットプラグの線を落とすものがあり、wlroots はそれを抜かれたとして出力を消す。DEsk は出力が一つも無くなると（headless 以外）終わっていた。入れ子で窓を閉じたとき用の処理だった。モニターは眠ったままなので、戻ったログイン画面も見えない。
+- `output_destroy`：終わるのは、入れ子の窓（`output_is_window`）か、終わる途中のときだけ。実機の最後の画面が消えたら、来るのを待つ。暗い間に消えたなら `dark_away`（次に来る画面も暗いまま待つ）。
+- `server_new_output`：暗い間（`dark`）か `dark_away` のときに来た実機の画面は、点けずに暗いまま入る（`wait_dark`。点けるときのモードは覚える）。一度点けて消すと、眠ったモニターを起こしてしまう。線を落としたり上げたりするモニターなら、そのたびに起こすことになる。机の画面が戻ったら、その大きさで机を並べ直す（`desk_resize_to`）。明るい間に来た画面は、誰かがいるしるしとして離席の時間を数え直す。
+- `input_seen`：画面が一つも無い間のキーとクリックはどこにも届かない（何が起きるか誰にも見えない）。誰かが戻ったことにはなり（`dark_away` を下ろす）、次に来る画面は点いて入る。画面が無いまま離席の時間が来たら暗くなり（ドアも閉める）、次の画面は暗く入る。
+- `displays_put_back`（displays.conf）：暗い間は後回し（`disp_after_dark`）。並べ直しは「画面を設定し直した人がいる」として画面を点けてしまう（`om_try`）ので、点いたとき（`screen_dark_sync`）に行う。
+- できないこと：線を落としたままのモニターは DEsk からは見えないので、起こせない。モニターの電源ボタンを押すか、モニターのディープスリープなどの省電力の設定を切るか、`screen_off = never`。README（日本語）の「画面の消灯」と CONFIGURATION.md に書いた。`~/.config/desk/shell.conf` は Shell Settings で初めて何かを変えたときに作られることも（本人が見つけられなかった）。
+- 確かめたこと：headless の机に、暗くする・最後の画面を消す（実機のふりをして）・キー・マウス・画面を足す、を時刻で起こす試験用の仕掛け（手元の `hpd/lab18-hooks.py`、本体には入れない）で：
+  - 直す前のビルド：最後の画面を消すと「shutting down」で終わる（本人のログと同じ）。
+  - 暗い → 消える → 戻る → キー：戻った画面は暗いまま。キーで点く。displays.conf は後回しにされ、点いたときに行われる。
+  - 暗い → 消える → マウスとキー → 戻る：戻った画面は点いて入る。画面が無い間のキーは届かない。
+  - 明るいまま消える → 離席（8 秒）で暗くなる → 戻る：暗く入り、キーで点く。明るいまま消えてすぐ戻る：点いて入り、離席の時間は戻ったときから。
+  - 暗い間に何度も消えて戻る：毎回暗いまま。
+  - 画面二つで、暗い間に机の画面が消え、別の画面が来る：机は残った画面へ、来た画面は暗いまま。キーで両方点く。
+  - 画面が無い間に、Wayland（zenity）と X（xeyes）のプログラムが窓を出す：落ちない。
+  - 全部を ASan＋UBSan のビルドでも、エラー 0。入れ子（X11）で窓を閉じると、今まで通り終わる。4 構成で警告 0。wm.c の静的解析（`-fanalyzer`、範囲を絞らない）0。
+- 本物のモニターの抜き差しでは試していない（この VM には無い）。
+
+### 2.4.78 Graphics を切り替えると Control Panel が正しく出ない：下地が上に（2026-10-23、次の版で）
+
+Graphics を Ultra → High → Ultra と切り替えると、Control Panel がおかしくなり、ログインし直すと直る（GitHub #12、Myttenzzz さん、RX 9060 XT）。
+
+- 再現：入れ子の机（部屋は VM の GPU）で Graphics を切り替えて Control Panel を開くと、トレースした下地だけが出て、針・ランプ・CRT・字・名札（動く半分）がすべて消えていた。1 回目の切り替え（Ultra → High）からそうなる。ポストも同じで、入っている手紙が見えなくなった。本棚は大丈夫。v0.1.2 から同じ作り。
+- 原因：Control Panel とポストの見え方は、層ごとに下から、カメラの動きのフィルム、トレースした下地（`cc_base`・`pb_base`、一度だけ作って取っておく）、その上に描く動く半分（`cc_live`・`pb_sprite`）。画質や画面の大きさが変わると、`desk_relayout` がフィルムと下地を捨てるが、動く半分は残す。次に開いたとき作り直した下地は層の一番上に入り、動く半分を覆っていた。フィルムは作るときに一番下へ下ろしていた（`film_ensure_body`）が、下地にはそれが無かった。
+- `view_bases_under`：下地を作ったら（開くときと、先に作っておく `views_prewarm` の両方）、動く半分のすぐ下へ置き直す。初めて作るときは動く半分がまだ無いので、何もしない。
+- 報告では「動くものは出て、背景が机の眺めになる」とあり、こちらで再現した形（下地だけ出る）とは違う。同じ切り替えで重なり順が崩れることは確かなので、直した版で本人に確かめてもらう。
+- 確かめたこと：入れ子の机で、Ultra → High → Ultra（間に開くとき・開かないとき）、High → 2D → High で、Control Panel・ポスト・本棚を撮った。直す前のビルドでは Control Panel の動く半分とポストの手紙が消えるのを再現し、直した後はどの段でも出る。ASan＋UBSan のビルドで Ultra → High → Ultra → 2D → Ultra を通して、エラー 0。4 構成で警告 0。wm.c の静的解析（`-fanalyzer`、範囲を絞らない）0。
+
+### 2.4.79 DEsk の中の本棚に「DEsk」（窓で開く）が出る（2026-10-23、次の版で）
+
+#18 の desk-report で気づいた。DEsk の中で本棚（ALL APPS）の「DEsk」を開くと、`desk-window` が「DEsk is already running」で何もせず、置いた紙が数秒で捨てられていた。この項目は、ほかのデスクトップから DEsk を窓で開くためのもの。
+
+- `session/desk-window.desktop` に `NotShowIn=DEsk;`（DEsk は `XDG_CURRENT_DESKTOP=DEsk`）。apps.c はこの項目を落とし、ほかのデスクトップのメニューには今まで通り出る。ほかの DEsk 用のファイル（`OnlyShowIn=DEsk;`）と同じく、desktop-file-validate は登録されていない名前と言う。
+- 確かめたこと：apps.c だけをつないだ小さな試験の道具（手元の `launcher/list-apps`）に、試験用の XDG のフォルダで一覧を作らせた。前は一覧にあり、後は「一覧に無い・棚の外に 1」。
+
+### 2.4.80 古い X のプログラムを畳むと名札が白い：壊れた UTF-8（2026-10-23、次の版で）
+
+2.4.79 の試験の道具を -O1 で組んだら、gcc が `desk_initial_of`（アイコンの無いときに印刷する頭の字）の memcpy に大きさの警告を出した。読むと、名前の頭の字が UTF-8 として揃っていないと、名前の終わりの先まで最大 2 バイト読み、壊れた字を返していた。Latin-1 の X の窓の題（WM_NAME だけで _NET_WM_NAME の無い古いプログラム。「Été」なら C9 74 E9）がそれに当たる。畳んだ紙の名札（`fold_label`）は、頭の字も名前も cairo にそのまま渡していて、cairo は壊れた UTF-8 を渡されると、その cr でそのあと何も描かない（状態が戻らない）。名札は真っ白になっていた。紙の見出しなど `show_text_as` を通るものは、前から `utf8_clean` で壊れたバイトを除いている。
+
+- `desk_initial_of`：頭のバイトが字の頭でない（続きのバイト、0xF8 以上）か、続きのバイトが揃っていない（名前の終わりを含む）ときは「?」。名前の終わりより先は読まない。入れ物の大きさが 0 なら何もしない。
+- `print_word`・`word_width`（畳んだ紙の名札などの字）：`show_text_as` と同じく `utf8_clean` を通す。
+- 確かめたこと：
+  - apps.c をつないだ試験（手元の `launcher/initial-test`、ASan＋UBSan、名前はそれぞれちょうどの大きさの heap に置く）で 14 通り：ラテン・é・日・絵文字は今まで通り、途中で切れた字・Latin-1・続きのバイトで始まる・0xFF・空・NULL は「?」、大きさ 0 は書かない。v0.1.3 の apps.c では、同じ試験で ASan が heap-buffer-overflow（3 バイトの読み）と負の大きさの memcpy を言う。
+  - 入れ子の机に、Latin-1 の WM_NAME だけの X の窓を出して畳んだ（手元の `launcher/latin1-window.py`）。直す前は名札が真っ白、直した後は「?」と名前（壊れたバイトを除いた「t Nol」）。
+  - ASan＋UBSan の机でも同じ窓を畳んで、エラー 0。4 構成で警告 0。apps.c と draw.c（範囲を絞ったもの）の静的解析 0。
+- 残っていること：Latin-1 の題を UTF-8 に直して読めば「Été à Noël」と出せる（xwayland の題を読む所で）。後で。
+
+### 2.4.81 壊れた UTF-8 のアプリの名前は、読んだ所で掃除する（2026-10-23、次の版で）
+
+2.4.80 の続き。アプリの名前（.desktop の Name・GenericName・Keywords）は apps.c で読んだまま、本棚・本・引き出し・紙のいろいろな描き方へ流れ、その中には cairo にそのまま渡す所がある（本の題名の幅を測る `cairo_text_extents` など）。描く側を一つずつ直す代わりに、読んだ所で一度だけ掃除する。
+
+- `utf8_scrub`（apps.c）：UTF-8 でないバイトを、その場で取り除く（判定は draw.c の `utf8_clean` と同じ）。`parse_entry` の終わりで、Name・Name（ロケール無し）・GenericName・Keywords に。UTF-8 でない .desktop（Latin-1 など）と、128 バイトの欄に写すとき字の途中で切れた長い名前（日本語なら 43 字から）の両方に効く。
+- 確かめたこと：apps.c をつないだ試験（手元の `launcher/names-test`、ASan＋UBSan）で、Latin-1 の Name と GenericName、「日」50 字の Name：v0.1.3 の apps.c ではどれも壊れた UTF-8（長い名前は 127 バイトで字の途中まで）、直した後はどれも正しい UTF-8（長い名前は 42 字の 126 バイト）。この VM の本物の .desktop（134、日本語のロケール）では、前と後で名前がバイトまで同じ。4 構成で警告 0、apps.c の静的解析 0。
+
+### 2.4.82 desk-report：DRM の装置ごとのドライバとつながった画面（2026-10-24、次の版で）
+
+Darkhawk さん（Discord、CachyOS、RTX 4050 だけのノート）の「木目しか出ない」は、レポートの session.log を読んで初めて分かった：wlroots がファームウェアの簡単な画面（simpledrm、card0）を主の装置にし、そこには GPU が無いので描画は CPU（pixman）に落ち、机は誰にも見えない「Unknown-1」に描かれ、本物のパネル（eDP-1、card1 の nvidia-drm）は「机の続き」の木目だけだった。wlroots 0.18 の `wlr_session_find_gpus` は simpledrm を外さない。レポートの頭の Graphics には `by-path card0 card1 renderD128` としか無かった。
+
+- Graphics に、装置ごとに一行：`card0: simple-framebuffer; screens: Unknown-1`（sysfs の `device/driver` の名前、PCI なら `boot_vga`、`status` が connected の画面）。ファームウェアの画面（simple-framebuffer・efi-framebuffer・vesa-framebuffer）がほかの装置と並んでいれば、その旨を一行。
+- NVIDIA なら `nvidia_drm` の modeset に加えて fbdev（NVIDIA が起動の画面を引き継ぐか）。カーネルの起動オプションのうち、画面とそのドライバを決めるもの（`nvidia*`・`nouveau.`・`amdgpu.`・`radeon.`・`i915.`・`xe.`・`video=`・`initcall_blacklist=`・`modprobe.blacklist=`・`nomodeset`）だけ。root= など、ほかは出さない。
+- README（英日）の desk-report の説明を合わせた。
+- 確かめたこと：この VM（vmwgfx）で `card0: vmwgfx, boot_vga 1; screens: Virtual-1`。sysfs と /proc/cmdline を差し替えた写し（手元の `report/`）で、Darkhawk さんの形（simpledrm＋nvidia、fbdev N、起動オプションに nvidia_drm.modeset=1）は二枚と注意書きと NVIDIA の二つ、AMD＋NVIDIA は注意書き無し、simpledrm だけは注意書き無し（nomodeset と video= は出る、root= は出ない）。dash と bash の両方。
+
+### 2.4.83 GPU の画面で、めくった角の下の窓が見えない（2026-10-24、次の版で）
+
+known-issues と不具合一覧の #10。紙の角をめくると、空いた三角に下にあるもの（`curl_underlay`：部屋、下の紙の影・紙・角、持ち上げたときは中身）が見えるはずが、GPU で組み立てる画面では下の紙が抜けて机の木目だった。角を下ろした小さな三角でも同じ。2.4.56 の「残り」に書いた通り、下の紙の影・紙・角を `paint_scene_buffer` が `wlr_scene_buffer.buffer` から読んでいて、GPU の画面では scene が絵を GPU に載せたあとそれを手放す（NULL）。中身（`paint_client`）は前から GPU から読み戻せていた。
+
+- これまで実機が要るとしていたが、この VM でも headless の机なら GPU（SVGA3D）で組み立てられる（`WLR_BACKENDS=headless WLR_RENDERER=gles2`）。そこで再現した。
+- `scene_hold`：その絵を DEsk の側でも持っておく（2.4.56 の大きさの記録 `pic_size` に、絵への参照を足した。絵を替えるたびに新しい方を持ち、古い方を放す。ノードが消えるときに放す）。窓の影（`shadow_sync_body`）・紙（`view->chrome`）・角（`view->curl`）だけ。`paint_scene_buffer` は scene の絵、無ければ持っている絵（`scene_pic_buffer`）から読む。
+- 手間：GPU の画面で、窓 1 枚につき影と紙の絵の分のメモリ（1032×540 の窓でおよそ 5 MB）。CPU の画面では scene がもともと持っているので変わらない。
+- 確かめたこと：headless の机（手元の `curl10/run10.sh`、試験用の仕掛け `lab10-hooks.py` でポインタを上の窓の角に置く）に zenity の窓を二つ重ね、grim で撮った。
+  - 直す前：GPU の画面だけ、角の三角が木目（角を下ろした状態で CPU と 3024 画素違う、4 倍に拡大して数えて）。
+  - 直した後：GPU と CPU で、角を下ろした状態は 0 画素違い。めくった状態の違いは時計の数字（撮った時刻）と角の字の数画素だけ。CPU の画面は直す前と同じ。
+  - ASan＋UBSan の机でも GPU と CPU の両方で角を開いて、エラー 0。4 構成で警告 0。wm.c の静的解析 0。
+- 本物の GPU（実機）では試していない。
+
+### 2.4.85 ファームウェアの画面（simpledrm）が本物のカードの横に残る機械（2026-10-25、次の版で）
+
+Darkhawk さん（Discord、v0.1.3）。NVIDIA だけのノート PC で、DRM のカードが二つ：card0 はファームウェアが起動に使った画面（simpledrm、Unknown-1）、card1 は NVIDIA（eDP-1）。NVIDIA のドライバーは `nvidia_drm.fbdev=1` がないと simpledrm を外さない。wlroots 0.18 はカードを全部取り、最初のもの（boot_vga のカードがあればそれ）で描く。boot_vga が無かったので card0 が主になり、EGL は「ソフトウェア描画」で断られて pixman（DEsk は 2D Fallback）、机は Unknown-1 に、本体の画面 eDP-1 は「机の横の画面」（木目だけ）。
+
+- `cards.c`（新）：起動時、`wlr_backend_autocreate` の前に `/sys/class/drm` を読む（何も開かない）。
+  - ファームウェアの画面：カードの装置のドライバー名（無ければ装置の名前）が `simple-framebuffer`・`efi-framebuffer`・`vesa-framebuffer`・`of-display`（simpledrm・efidrm・vesadrm・ofdrm）。
+  - 本物のカード：それ以外で、画面の口（`cardN-eDP-1` など）があるもの。口の無いもの（modeset なしの NVIDIA、描くだけの GPU）は数えない（wlroots も `drmIsKMS` で外す）。
+  - seat：udev の `/run/udev/data/c226:N` の `ID_SEAT`（無ければ seat0、wlroots と同じ）で、自分の seat（`XDG_SEAT`、無ければ seat0）のものだけ。
+  - ファームウェアの画面と本物のカードが両方あるときだけ、本物のカードを `WLR_DRM_DEVICES` に（boot_vga のものを先に、あとは番号順）。ログに「screens: card0 (simple-framebuffer) is the firmware's framebuffer, with a real card beside it: left out (the desk goes on /dev/dri/card1)」。
+  - しないとき：`WLR_DRM_DEVICES` が指定済み、入れ子（`WLR_BACKENDS` に drm が無い、または WAYLAND_DISPLAY・DISPLAY がある）、headless。
+  - バックエンドを作ったら `WLR_DRM_DEVICES` は消す（起動するプログラムに残さない。wlroots が読むのは作るときだけ）。
+- desk-report の注記（2.4.82）はそのまま残し、説明だけ直した（`of-display` も足した）。
+- 確かめたこと：
+  - 作り物の `/sys/class/drm` で 15 通り（手元の `cards/run.sh`、ASan＋UBSan）：Darkhawk さんの機械（boot_vga なし／あり）、Intel だけ、GPU 2 つ＋simpledrm（boot_vga のものが先）、GPU 2 つだけ、modeset なしの NVIDIA、simpledrm だけ、efi・vesa、ドライバーのリンクの無い装置、card10、二つの seat（ほかの seat のカードは数えない）、`/sys/class/drm` 無し。この VM の本物の sysfs（vmwgfx だけ）では何もしない。
+  - 実機の代わりに QEMU（手元の `qemu-drm/`。KVM が無いので TCG、root 不要）：Arch の試験場の root に Arch のカーネル 7.2.9（simpledrm 組み込み）を入れ、ext4 のディスクに（`mkimage.sh`、lab.sh と同じ user namespace で作るので持ち主がそのまま）。OVMF で起動するのでファームウェアの画面が残り、標準 VGA のドライバー（bochs）を止めて simpledrm を card0 に、virtio-gpu（この VM の GPU を virgl で使う）を card1 に。PID 1 は `qemu-desk-init`（udev、seatd、DEsk だけ）。QMP の screendump で両方の画面を撮る（`run.sh`）。
+  - 直す前の DEsk（試験場に入っている v0.1.2）：card0 (simpledrm) と card1 を初期化、「Software rendering detected」で pixman、2D Fallback、机は Unknown-1、Virtual-1 は横の画面で真っ黒。Darkhawk さんのログと同じ。
+  - 直した DEsk：card0 を外して card1 だけ、virgl の GLES2 で描き（部屋も GPU で）、机は Virtual-1。ファームウェアの画面は起動したときのまま（TianoCore のロゴ）。
+  - 普通の機械（bochs を入れて simpledrm と入れ替わる）：何もしない（ログに screens: は出ず、二枚とも wlroots のまま）。
+  - 4 構成で警告 0。cards.c・wm.c の静的解析 0。
+- 本物の NVIDIA では試していない（Darkhawk さんに見てもらう）。
+
+### 2.4.86 2 つ目の配列にアラビア語など、配列を替えてもショートカットが効く（2026-10-26、次の版で）
+
+YZ10 さん（Discord）：2 つ目のキーボード配列にアラビア語を使いたい。shell.conf の `keyboard_second = ara` では動くが、Shell Settings の一覧に無い。
+
+- 一覧（settings.c `SECOND_WORDS`/`SECOND_VALS`）に、2 つ目の配列にされることの多い文字の 7 つを足した：アラビア語 `ara`、ペルシア語 `ir`、ヘブライ語 `il`、ギリシャ語 `gr`、ウクライナ語 `ua`、ヒンディー語 `in`、タイ語 `th`。名前は 7 か国語（i18n.c）。1 つ目の配列（キーボードそのもの）の一覧はそのまま。
+- 選択肢の数の上限 `DESK_FORM_OPTS`（desk.h）を 20 から 32 に。23 語になって、19 語を超えた分（ギリシャ語〜タイ語）が出ていなかった。使う配列はどちらも calloc で取っているので、増えた分（約 20 KB）はスタックに乗らない。
+- 配列を替えている間のショートカット：DEsk は押されたキーの、今の配列での記号で探していたので、アラビア語（ロシア語なども同じ）の間は Super+A が Super+ش で、本棚もロックも効かなかった。Super・Ctrl・Alt を押していて何も当たらなければ、そのキーの 1 つ目の配列での記号（今の修飾キーでの段で）でもう一度探す。修飾キーなしの文字（検索、メモ帳、本）は今の配列のまま。
+- 確かめたこと（入れ子の机、手元の `cp12/run12.py` に shell.conf の行を足す `--conf`、机の中でプログラムを起動する `run:`、Xephyr の配列を替える `xkb:` を足した。X11 のバックエンドはキーボードのグループを X サーバーから受けるので、入れ子では Xephyr の側でも 2 つの配列にしないと切り替わらない）：
+  - mousepad で Alt+Shift の後に打つとアラビア文字（つながった形）、戻すとラテン文字。
+  - アラビア語のまま Super+A で本棚が開く。直す前のビルドでは開かず、キーが窓に入った。
+  - Shell Settings の「Second layout」で `ara` が「Arabic」に丸、日本語の画面でも「アラビア語」。タイ語を押すと shell.conf に `keyboard_second = th`、机は 1 秒で `jp,th` の配列に。
+  - ASan＋UBSan の机と Shell Settings でエラー 0。4 構成で警告 0。settings.c・i18n.c・draw.c・wm.c の静的解析 0。
+
+### 2.4.87 GTK 4 のテーマ（2026-10-26、次の版で）
+
+GitHub #17：VKOWinHecker201 さんが、DEsk の GTK 3 のテーマを GTK 4 と libadwaita 向けにした gtk.css を作ってくれた（MIT で入れてよいと返事あり）。作りは「ユーザー自身の GTK 4 のスタイルシート」：libadwaita の色の名前（1.0〜1.5 の `@define-color`、1.6 からの CSS の変数）と、部品ごとの色・グラデーションだけで、形は持たない。
+
+- `themes/gtk/DEsk/gtk-4.0/`：`paper.css` がいただいたもの（頭に出どころを足しただけ）。`gtk.css` は GTK 4 の標準のテーマ（`resource:///org/gtk/libgtk/theme/Default/Default-light.css`）を読み込んでから `paper.css`、最後に、標準のテーマがまだ青で描く notebook の選んだタブの線を真鍮に（四方とも）。GTK 3 と同じく `install_subdir` で入り、desk-session の dconf の層（gtk-theme = DEsk）で、テーマに従う GTK 4 のアプリが DEsk のセッションでだけ紙になる。
+- libadwaita のアプリはテーマを見ない（libadwaita が gtk-theme-name を Adwaita-empty にして自分のスタイルを読む。GTK_THEME を置けば自分のスタイルを読まなくなり、部品が崩れる）。効くのはユーザー自身の `~/.config/gtk-4.0/gtk.css` だけで、それはどのデスクトップでも読まれる。「テーマは DEsk のセッションだけ」の方針なので、自動では書かない（ユーザーの判断、2026-10-26）。README（日・英）に、足したい人の 1 行（`@import url("file:///usr/local/share/themes/DEsk/gtk-4.0/paper.css");`）と、ほかのデスクトップでも効くこと、外し方を書いた。
+- 確かめたこと（入れ子の机、`run:` で `GTK_THEME=DEsk` と、テーマを置いた `XDG_DATA_DIRS`）：pavucontrol 6.1（GTK 4、libadwaita なし）が、白と青から紙・真鍮・マニラのタブに。電卓（libadwaita 1.7）も、`XDG_CONFIG_HOME` の `gtk-4.0/gtk.css` に 1 行で紙・マニラのヘッダー・真鍮の「=」に。GTK の CSS の警告は無し。`meson install` で `share/themes/DEsk/gtk-4.0/` の 2 つが入る。
+- 暗い色の設定（color-scheme が dark）のときの見え方は試していない（DEsk のテーマには明るい版しか無い）。
+
+### 2.4.88 開いた（最大化した）ブラウザが、全画面から戻ると小さくなる（2026-10-26、次の版で）
+
+what さん（Discord #bug-report「Small little bugs」の 1）：Brave を Unfold（最大化）にして、YouTube の動画を全画面にして戻ると、開いた紙ではなく元の大きさの紙に戻る。
+
+- 原因：xdg-shell の set_maximized と unset_maximized は、wlroots ではどちらも同じ request_maximize になる。DEsk はそれを見ずに、いつも「逆にする」（`view_toggle_max`）だった。Chromium 系のブラウザは全画面から戻るとき、前の状態（最大化）をもう一度頼むので、最大化していた窓が逆に戻されていた。X の窓（`xview_request_maximize`）は頼まれた状態と比べていたので、X で動くブラウザでは起きない。
+- 直し：`xdg_toplevel_request_maximize` で `requested.maximized` を今の状態と比べ、違うときだけ切り替える。同じなら今の状態で configure を返す（xdg-shell は返事を求める）。
+- 確かめたこと（入れ子の机、Google Chrome を別のプロフィールで、全画面にするだけの手元のページ）：
+  - 直す前：Wayland の Chrome で、タブの帯をダブルクリックして最大化 → ページを全画面 → Esc で、元の小さい紙に戻った（報告どおり）。
+  - 直した後：同じ手順で最大化のまま戻る。ダブルクリックで元の大きさ、もう一度で最大化、F11 の全画面と戻り、どれも頼んだとおり。最大化していない窓は全画面から元の大きさと場所に戻る。
+  - X で動く Chrome（`--ozone-platform=x11`）と Firefox（Wayland）は、直す前から最大化のまま戻る（後者は同じ手順で直した後も確認）。
+  - ASan＋UBSan の机でエラー 0。4 構成で警告 0。wm.c の静的解析 0。
+- Brave では試していない（Chrome と同じ Chromium で、同じ頼み方をするはず）。
+
+### 2.4.89 古い機械で、玄関（ロック画面）が何秒も止まる（2026-10-26、次の版で）
+
+次の版の動作テストで見つけた。古い機械の試験台（`oldhw.py`）に、ロックして解除する手順を足して Low で測った（パスワードを打つ時刻はどれも同じ）。
+
+- 症状：2010 年相当（CPU 2 つに 25%）で、Super+L から部屋に入るまで、普通の夜 14.9 秒（1 フレームの最大 1.0 秒）、クリスマス 16.7 秒（3.2 秒）、打ったキーが 12 秒遅れて届く）。今の機械（8 CPU、全速）では起きない（最大 0.16 秒）。2D（CPU で描く機械の既定）は扉を半分の大きさで、細かい二度目のパスも無いので起きない。
+- 原因（玄関は GPU があっても CPU のレイトレース）：
+  1. 止まった所の細かい描き直し（`lk_bg_start` のスレッド）がコンポジタと同じ優先度で走り、動いている間の粗いフレーム（コンポジタのスレッドも加わる）と CPU を取り合っていた。
+  2. 扉を片付けるとき（`desk_lock_forget`：部屋に入った、大きさや画質が変わった）、もう要らない細かい描き直しが終わるのを待っていた（`lk_bg_collect(true)`）。
+  3. 粗いフレームの細かさは 25 ms に合わせて 1 フレームに 0.8〜1.2 倍しか動かず、初めは 35 万画素からだった。
+- 直し（draw.c、扉の描き方だけ。見え方は変えない）：
+  - 細かい描き直しのスレッドは後ろに回す（`thread_to_the_back`、nice 19。部屋のトレースと同じ「フレームはそれを待たない」に合わせた）。
+  - 要らなくなったら行ごとに見る合図（`stop`）で打ち切る（`lk_bg_stop`）。待つのは今の行が終わるまで。打ち切った絵は捨てる（二度目のパスと光のにじみも飛ばす）。`desk_lock_settle`（プレビューが細かい絵を待つ）は今までどおり最後まで。
+  - 粗いフレーム：いちばん粗い 0.20 から始めて、間に合えば 1 フレームに 1.2 倍ずつ細かく（扉が現れるフェードの間に）、ずっと遅れれば一度に半分まで粗く。覚えた細かさはロックをまたいで持ち越す。
+- 結果（同じ試験、Low。部屋に入るまで／1 フレームの最大）：
+  - 2010 年相当：普通の夜 14.9 → 12.4 秒／1.0 → 0.13 秒、クリスマス 16.7 → 12.5 秒／3.2 → 0.45 秒。
+  - i3-6100U 相当：普通の夜 12.5 → 12.4 秒／0.36 → 0.08 秒、クリスマス 13.8 → 12.4 秒／0.74 → 0.15 秒。
+  - 今の機械（8 CPU 全速、High）：部屋に入る時刻は同じ、1 フレームの最大は 0.11 → 0.05 秒（普通の夜）、0.11 → 0.08 秒（クリスマス）。
+  - 残る引っかかりは、ロックした直後の準備（部屋の写しなど、1.2 秒まで）と、かがみ込む最初のフレーム（0.8 秒まで）。
+- 試験台：`oldhw.py` に、名前を指定したときだけ走る `lock` と `lock-quick`（細かい描き直しの途中で入って、すぐまたロック）を足した。この VM は CPU が 8 個で、2 つに絞っても sysconf は 8 と答えるので、DEsk の描くスレッドが 2 CPU の上に 8 本立ち、本物の 2 コアより止まりが大きく出る。手元の `harness/ncpu/ncpu.so`（LD_PRELOAD、sysconf を taskset の数に）で本物の数に合わせて測った。
+- 確かめたこと：ASan＋UBSan の机（ロック 3 回、うち 2 回は細かい描き直しの途中で入る）でエラー 0（終了時に残る物の報告は、フォントの型・ロックの写真・main のタイマーだけで、扉からは無し）。TSan で競合 0（apps.c のスレッドを終了時に待たない報告 1 つは前から）。werror の構成で警告 0。draw.c の静的解析 0。プレビューの止まった姿勢の絵は前と同じ（動いている姿勢の粗い絵は、そのときの細かさで描くので変わる）。
+- 実機では試していない。
+
 ## 3. 部屋の描画（レイトレーサ）
 
 ### 3.1 シーン

@@ -63,6 +63,7 @@ DEsk v0.1 (BETA) の技術的な全体像です。どんなプログラムがあ
 | `src/power.c` | | logind を通したログアウト・再起動・電源オフ。 |
 | `src/panel.c` | 約 950 | Control Panel の計器が読む `/proc`・`/sys`・ミキサーの値。 |
 | `src/occasion.c` | 約 530 | 日付（誕生日、新年など）と玄関の天気（open-meteo.com。切れます）。 |
+| `src/cards.c` | 約 190 | wlroots に渡す DRM のカード：画面の口を持つ本物のカードがあれば、ファームウェアの画面（simpledrm）を外す。 |
 | `src/agenda.c`、`src/memo.c` | | カレンダーの付箋とメモ帳の紙。`$XDG_DATA_HOME/desk` に保存。 |
 | `src/camera.c` | 約 260 | カメラやマイクが使われているか（時計の二つのランプ）。 |
 | `src/sfx.c`、`src/sound.c` | 約 2,750 | すべての音を起動時に合成し、ミキサーのスレッドで鳴らします（libpulse、または実行時に読み込む ALSA）。 |

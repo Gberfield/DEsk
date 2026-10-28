@@ -1,5 +1,5 @@
 project('desk', 'c',
-  version: '0.1.3',
+  version: '0.1.4',
   default_options: [
     'buildtype=debugoptimized',
     'c_std=c11',
@@ -15,7 +15,7 @@ add_project_arguments(
 )
 # what this release is called, as --version and the session log say it,
 # and its number, as the notification server tells programs that ask
-add_project_arguments('-DDESK_RELEASE="DEsk v0.1.3 (BETA)"',
+add_project_arguments('-DDESK_RELEASE="DEsk v0.1.4 (BETA)"',
   '-DDESK_VERSION="@0@"'.format(meson.project_version()), language: 'c')
 # a variable initialised from itself (x = x) is uninitialised, and in C
 # -Wall does not say so: a keysym once read as garbage that way
@@ -147,7 +147,7 @@ executable('desk-preview',
 )
 
 wm_sources = proto_headers + ['src/wm.c', 'src/power.c', 'src/session.c', 'src/lock.c',
-  'src/camera.c', 'src/occasion.c']
+  'src/camera.c', 'src/occasion.c', 'src/cards.c']
 wm_deps = [wlroots, wayland_server, xkbcommon, cairo, fontconfig, pixman, libdrm, math, threads]
 # the screen lock checks the password as login does
 pam = dependency('pam', required: false)

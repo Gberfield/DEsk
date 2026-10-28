@@ -14,15 +14,15 @@ iOS 6 のころのように画面の中の物を本物そっくりに描く考�
 部屋はレイトレースで描かれ、一つの電気スタンドがそのすべてを照らします。
 フラットな懐古スキンではなく、ウォルナットの木目・引き出しのフェルト・紙の繊維・レザーのステッチをピクセル単位で組んでいます。
 
-**v0.1.3 (BETA)** — 最初の公開版 v0.1 に、修正、Fedora のインストーラ、ゲームの全画面を足した版です。直したこと・中身・分かっている制限は [RELEASE-NOTES.ja.md](RELEASE-NOTES.ja.md) に。
+**v0.1.4 (BETA)** — v0.1.3 に修正（モニターが眠ってもセッションが終わらない、起動の画面がグラフィックカードの横に残るノート PC でも正しい画面に机が出る、など）、GTK 4 のアプリの紙の色、2 つ目の配列のアラビア語などを足した版です。直したこと・中身・分かっている制限は [RELEASE-NOTES.ja.md](RELEASE-NOTES.ja.md) に。
 
 discordのサーバーを作りました！是非参加してください。
-リンク： https://discord.gg/xR5f7Xs49
+リンク： https://discord.gg/bscPSCsram
 
 ![机：紙に載った二つのプログラム、時計、左奥の Control Panel、右奥のポスト](docs/screenshots/desk.jpg)
 
 > **状態：ベータ。** 作者の機械で毎日使っていて、念入りに確かめてもいますが（[docs/ARCHITECTURE.ja.md](docs/ARCHITECTURE.ja.md) の 9 節）、
-> 最初の公開版です。粗いところはあり、これから変わるところもあります。設定とデータは先の版へ引き継ぎます。
+> まだ始まったばかりです。粗いところはあり、これから変わるところもあります。設定とデータは先の版へ引き継ぎます。
 
 ## インストール
 
@@ -115,6 +115,13 @@ DEsk のセッションでは、ほかのアプリも机に合わせた見た目
 - **GTK テーマ「DEsk」**（`themes/gtk/DEsk`）：Adwaita の上に、窓は紙の色、リストや
   文字欄は白い紙、文字はインク、選んだものは真鍮、メニューバーとツールバーはマニラの色。
   Qt のアプリも GTK に合わせて着替えます（qt6-gtk-platformtheme）。
+- **GTK 4 のアプリ**も同じ色に（`gtk-4.0`：GTK 4 の標準のテーマの上に重ねる。GitHub #17
+  で VKOWinHecker201 さんが作ってくれたもの）。ただし libadwaita で作られたアプリ
+  （Nautilus・電卓など GNOME のほとんど）はテーマを見ないので、そのままです。それらも
+  紙の色にしたいときは、`~/.config/gtk-4.0/gtk.css` に次の 1 行を書きます（ほかの
+  デスクトップでも効きます。やめるときはその行を消します）：
+  `@import url("file:///usr/local/share/themes/DEsk/gtk-4.0/paper.css");`
+  （`--prefix` を変えて入れたなら、その下の `share/themes`）
 - **DEsk のセッションの中だけ**：desk-session が dconf に DEsk 用の層
   （`desk-dconf-profile`：DEsk の層をユーザーの設定の上に重ねる）を使わせ、最初の
   ログインでその層にアイコンと GTK テーマを入れます。GNOME など、同じ機械のほかの
@@ -1188,6 +1195,12 @@ Shell Settings の「Camera bounce」（カメラの揺れ）で低く、また�
 
 - 実機（DRM）では出力そのものを切り、点けるときに元のモードに戻します。入れ子では
   窓を黒で覆い、描くのをやめます
+- 眠ると「抜かれた」と知らせるモニター（HDMI や DisplayPort の、眠るとホットプラグの
+  線を落とすもの）でも、セッションは終わらず、画面が戻るのを待ちます。暗い間に戻って
+  きた画面は暗いまま待ち、キーかポインタで点きます。画面が一つも無い間のキーとクリック
+  はどこにも届きません。モニターが眠ったまま戻らないときは、モニターの電源ボタンを
+  押してください（モニターのディープスリープなどの省電力の設定を切るか、
+  `screen_off = never` でも避けられます）
 - 動画のプレーヤーやブラウザ（Wayland の idle-inhibit）は、窓が見えている間だけ
   画面を点けたままにできます（畳まれた・引き出しの中・ロック中は数えません）
 - ext-idle-notify も同じ操作で知らせるので、swayidle も使えます。
@@ -2066,7 +2079,10 @@ WAV に書く、試験用。`%p` はプロセス番号）。ビルドは `-Dsoun
   紙の余白の上と折り目そのものだけで、すぐ下にあるアプリの「閉じる」は押せます
 - X11 のアプリ（Motif ヒントで枠を断るもの）も同じ。スプラッシュ画面は載せません
 
-**設定**は `$XDG_CONFIG_HOME/desk/shell.conf`（無ければ `~/.config/desk/shell.conf`）：
+**設定**は `$XDG_CONFIG_HOME/desk/shell.conf`（無ければ `~/.config/desk/shell.conf`）。
+このファイルは、Shell Settings で初めて何かを変えたときに作られます（自分で作っても
+かまいません）。それまでは機械全体の既定（`/etc/xdg/desk/shell.conf`）と、下の既定の
+値のままです：
 
 ```
 paper_for_all_windows = yes      # no にすると、枠を自分で描くアプリはそのまま
@@ -2122,7 +2138,7 @@ DEsk のもの）で、その上に描いたフォルダーとメモ帳にフォ
 | Pointer speed | `pointer_speed` | normal | Slow / Normal / Fast（shell.conf には libinput の -1〜1 も書ける） |
 | Buttons for the left hand | `left_handed` | no | 主なボタンを右に |
 | Keyboard layout | `keyboard_layout` | system | このコンピュータの設定（localectl）／英語（US・UK）・日本語・ドイツ語など 15。shell.conf には xkb の配列ならどれでも（`us(intl)` など） |
-| Second layout | `keyboard_second` | none | 2 つ目の配列 |
+| Second layout | `keyboard_second` | none | 2 つ目の配列。1 つ目と同じ 15 に、アラビア語・ペルシア語・ヘブライ語・ギリシャ語・ウクライナ語・ヒンディー語・タイ語 |
 | Change layouts with | `keyboard_switch` | alt_shift | Alt+Shift / Super+Space / Ctrl+Shift / Caps Lock（IBus の切り替えが Super+Space のときは別のものを） |
 | Key repeat | `key_repeat` | normal | Slow（800 ms 後に毎秒 15）/ Normal（600 ms、25）/ Fast（300 ms、40） |
 | **DAYS AND WEATHER** | | | |
@@ -2326,7 +2342,7 @@ DEsk の机の部品（引き出し・本棚・Control Panel・ポスト・カ�
 desk-report
 ```
 
-DEsk の版、Linux、グラフィックカードとドライバー、直前のセッションのログ、DEsk が落ちたかどうかをまとめ、ユーザー名・ホームフォルダ・マシン名・ネットワークのアドレスは取り除きます。送る前に中身を見てください。何をして何が起きたかも書いてください。
+DEsk の版、Linux、グラフィックカードとそのドライバーとつながった画面、直前のセッションのログ、DEsk が落ちたかどうかをまとめ、ユーザー名・ホームフォルダ・マシン名・ネットワークのアドレスは取り除きます。送る前に中身を見てください。何をして何が起きたかも書いてください。
 
 これが無いとき（古い DEsk や、インストールされていないとき）は、次を手で添えてください。
 

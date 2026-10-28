@@ -2,11 +2,11 @@
 
 # DEsk
 
-**v0.1.3 (BETA)** -- v0.1, the first public release, with fixes, an installer for Fedora, and games on the whole screen. See [RELEASE-NOTES.md](RELEASE-NOTES.md).
+**v0.1.4 (BETA)** -- fixes (a session no longer ends when a monitor goes to sleep, and laptops whose firmware screen stays beside the graphics card get the desk on the right screen), GTK 4 programs on paper, and Arabic and more as a second keyboard layout. See [RELEASE-NOTES.md](RELEASE-NOTES.md).
 
 I've created a Discord server!
 You can also report bugs and submit ideas for new features here!
-link : https://discord.gg/xR5f7Xs49
+link : https://discord.gg/bscPSCsram
 
 > **DEsk** is **D**esktop **E**nvironment and **desk** in one word -- a
 > name that came from the Reddit community. It used to be called DeskWM:
@@ -27,7 +27,7 @@ back of the desk. The room is ray-traced, and one desk lamp lights all of it.
 
 > **Status: beta.** DEsk is used day to day on its author's machines and has
 > been checked carefully (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
-> section 9), but this is its first release: expect rough edges, and expect
+> section 9), but it is still early days: expect rough edges, and expect
 > things to change. Your settings and data will be carried forward.
 
 ## Install
@@ -213,7 +213,7 @@ browser, a file manager and a text editor. The drawer's things and
   settings, borrowed programs, sounds, the room, things on the desk.
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md) -- every setting, file and
   environment variable.
-- [RELEASE-NOTES.md](RELEASE-NOTES.md) -- what is in v0.1.3 and what is known
+- [RELEASE-NOTES.md](RELEASE-NOTES.md) -- what is in v0.1.4 and what is known
   not to work yet.
 - [docs/design.md](docs/design.md) -- the full development log (in Japanese).
 
@@ -288,7 +288,11 @@ with a sheet to each part of the form and a sticky note on each sheet's
 edge; taking hold of a note turns the sheets over the wire to it, as on the
 desk calendar (Page Up and Down too). Changing tab (a click, Ctrl+Tab or
 Ctrl+Page Up/Down) draws the other pad up out of the folder from below, and
-the pad comes up the same way when the window opens.
+the pad comes up the same way when the window opens. Your settings are kept
+in `~/.config/desk/shell.conf`, which Shell Settings writes the first time you
+change one (you can also write it yourself); until then the machine's defaults
+(`/etc/xdg/desk/shell.conf`, from the installer) and DEsk's own hold. Every
+setting is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 Started as a session (`desk-session`, from a login screen), DEsk tells
 D-Bus and systemd where its display is, runs the XDG autostart entries
@@ -353,9 +357,17 @@ archive, a deck of punched cards for a program, a block of wood type for a
 font, a wire wastebasket you see through, a brass globe for the network, a
 drive in its aluminium case -- with the grain of paper, card, wood and
 brushed metal and the shadows they cast; and a GTK theme of paper, ink and
-brass. They are set in a dconf
-layer of DEsk's own over the user's, so another desktop on the same machine
-keeps its look.
+brass, for GTK 3 and GTK 4 (the GTK 4 one by VKOWinHecker201). They are set
+in a dconf layer of DEsk's own over the user's, so another desktop on the
+same machine keeps its look.
+
+Programs made with libadwaita (most of GNOME's, such as Files and
+Calculator) do not follow GTK themes. To put them on paper too, add this
+line to `~/.config/gtk-4.0/gtk.css` (it then applies in every desktop you
+use; remove the line to undo it, and if DEsk went in with another
+`--prefix`, the path is under that):
+
+    @import url("file:///usr/local/share/themes/DEsk/gtk-4.0/paper.css");
 
 When something on the desk gets stuck: Ctrl+Alt+Del twice puts everything
 of the desk's own away and draws it all again (the windows stay as they are);
@@ -501,10 +513,11 @@ need not start), and attach the file it writes, `~/desk-report.txt`:
 desk-report
 ```
 
-It gathers DEsk's version, your Linux, your graphics card and driver, the
-last session's log and whether DEsk crashed, with your user name, home
-folder, machine name and network addresses taken out. Read it through before
-sending it. Say too what you did and what happened.
+It gathers DEsk's version, your Linux, your graphics cards with their
+drivers and the screens plugged into them, the last session's log and
+whether DEsk crashed, with your user name, home folder, machine name and
+network addresses taken out. Read it through before sending it. Say too
+what you did and what happened.
 
 Without it (an older DEsk, or one not installed), attach by hand:
 

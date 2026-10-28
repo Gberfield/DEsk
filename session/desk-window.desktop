@@ -15,3 +15,5 @@ StartupNotify=false
 StartupWMClass=desk-window
 Categories=Utility;
 Keywords=wayland;compositor;desktop;desk;
+# DEsk in a window is for the other desktops: inside DEsk it is already running
+NotShowIn=DEsk;

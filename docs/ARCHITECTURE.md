@@ -98,6 +98,7 @@ Logging out, restarting and powering off ask every window to close first
 | `src/power.c` | | Log out / restart / power off through logind. |
 | `src/panel.c` | ~950 | The Control Panel's readings from `/proc`, `/sys` and the mixer. |
 | `src/occasion.c` | ~530 | Dates (birthday, the new year...) and the weather at the door (open-meteo.com, opt-out). |
+| `src/cards.c` | ~190 | Which DRM cards wlroots takes: the firmware's framebuffer (simpledrm) left out when a real card with screens is there. |
 | `src/agenda.c`, `src/memo.c` | | The calendar's notes and the memo pad's sheets, saved under `$XDG_DATA_HOME/desk`. |
 | `src/camera.c` | ~260 | Whether a camera or microphone is in use (the clock's two lamps). |
 | `src/sfx.c`, `src/sound.c` | ~2,750 | Every sound synthesised at start-up, and a mixer thread that plays them (libpulse, or ALSA loaded at run time). |
