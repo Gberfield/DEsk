@@ -8,6 +8,8 @@ I've created a Discord server!
 You can also report bugs and submit ideas for new features here!
 link : https://discord.gg/bscPSCsram
 
+Homepage: https://fyzugx.github.io/DEsk/ -- the highlights, a desk you can try in your browser, the install steps and an FAQ.
+
 > **DEsk** is **D**esktop **E**nvironment and **desk** in one word -- a
 > name that came from the Reddit community. It used to be called DeskWM:
 > the commands are now `desk`, `desk-session`, `desk-settings` and so on, and
