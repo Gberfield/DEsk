@@ -19,6 +19,8 @@ iOS 6 のころのように画面の中の物を本物そっくりに描く考�
 discordのサーバーを作りました！是非参加してください。
 リンク： https://discord.gg/bscPSCsram
 
+ホームページ： https://fyzugx.github.io/DEsk/ （ハイライト、ブラウザで触れる机、インストールの手順、よくある質問）
+
 ![机：紙に載った二つのプログラム、時計、左奥の Control Panel、右奥のポスト](docs/screenshots/desk.jpg)
 
 > **状態：ベータ。** 作者の機械で毎日使っていて、念入りに確かめてもいますが（[docs/ARCHITECTURE.ja.md](docs/ARCHITECTURE.ja.md) の 9 節）、
