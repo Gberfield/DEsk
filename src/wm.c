@@ -21451,6 +21451,12 @@ static void server_new_output(struct wl_listener *listener, void *data)
 	 * mode it is to be lit in (output_set_dark). */
 	bool wait_dark = (server->dark || server->dark_away) && !output_is_window(wlr_output);
 	wlr_output_init_render(wlr_output, server->allocator, server->renderer);
+	if (wlr_output_is_wl(wlr_output)) {
+		/* Keep the nested pointer in the window's rendered content. Some
+		 * parent compositors don't display the separate cursor surface. */
+		wlr_output_lock_software_cursors(wlr_output, true);
+		wlr_log(WLR_INFO, "nested Wayland output: drawing cursor in the window");
+	}
 	/* --size picks the window's size under a nested backend too, not just
 	 * the headless one: an X11 window would otherwise come up at whatever
 	 * wlroots defaults to. */
